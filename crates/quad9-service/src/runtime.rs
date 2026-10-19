@@ -157,7 +157,17 @@ impl<B: ServiceBackend, S: JournalStore + StateStore> Controller<B, S> {
                 self.engine.restore().map(|report| ResultBody::Restored {
                     revision,
                     complete: report.is_complete(),
-                    issues: report.issues.into_iter().map(|i| i.reason).collect(),
+                    issues: report
+                        .issues
+                        .into_iter()
+                        .map(|i| {
+                            let family = match i.target.family {
+                                AddressFamily::Ipv4 => "IPv4",
+                                AddressFamily::Ipv6 => "IPv6",
+                            };
+                            format!("{} {family}: {}", i.target.adapter_id.as_str(), i.reason)
+                        })
+                        .collect(),
                 })
             }
             _ => unreachable!("Only mutation commands have a revision"),
