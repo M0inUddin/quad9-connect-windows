@@ -23,6 +23,7 @@ import type {
 type View = "connection" | "diagnostics" | "settings";
 type MonitorFailure = { generation: number; message: string };
 type TrayResult = { Ok: Response } | { Err: string };
+type InterfaceContext = { view: View; tray_result: TrayResult | null };
 const copy = {
   off: [
     "Ready when you are",
@@ -155,10 +156,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
     let alive = true;
     (async () => {
       if (isTauri()) {
-        const context = await invoke<{
-          view: View;
-          tray_result: TrayResult | null;
-        }>("interface_context");
+        const context = await invoke<InterfaceContext>("interface_context");
         if (context) {
           setView(context.view);
           if (context.tray_result) acceptTrayResult(context.tray_result);
@@ -207,8 +205,15 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
     const unlisten = listen<string>("navigate", (event) => {
       if (["connection", "diagnostics", "settings"].includes(event.payload)) {
         setView(event.payload as View);
-        if (event.payload === "diagnostics")
-          void perform({ type: "run_diagnostics" });
+        // Consume the saved tray receipt in an existing window too, so it
+        // cannot reappear as a stale error after a later window recreation.
+        void invoke<InterfaceContext>("interface_context")
+          .then((context) => {
+            if (context?.tray_result) acceptTrayResult(context.tray_result);
+            if (event.payload === "diagnostics")
+              void perform({ type: "run_diagnostics" });
+          })
+          .catch((error) => setError(String(error)));
       }
     });
     const changed = listen("service-changed", invalidate);

@@ -1,6 +1,7 @@
 # Read-only counters. Run against release binaries after installation with DNS off.
 param(
     [int] $HostProcessId = 0,
+    [switch] $DesktopOnly,
     [ValidateSet('service', 'window', 'tray')][string] $Mode = 'service',
     [ValidateRange(300, 3600)][int] $DurationSeconds = 300,
     [ValidateRange(10, 300)][int] $SettleSeconds = 30,
@@ -9,9 +10,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $service = Get-CimInstance Win32_Service -Filter "Name='Quad9Connect'"
-if (-not $service -or $service.State -ne 'Running') { throw 'The installed Quad9 service must be running.' }
+if ($DesktopOnly -and ($Mode -eq 'service' -or $HostProcessId -le 0)) { throw 'Desktop-only sampling requires window/tray mode and the desktop PID.' }
+if (-not $DesktopOnly -and (-not $service -or $service.State -ne 'Running')) { throw 'The installed Quad9 service must be running.' }
 if ($Mode -ne 'service' -and $HostProcessId -le 0) { throw 'Window/tray measurements require the desktop PID.' }
-$roots = @([int]$service.ProcessId)
+$roots = @()
+$serviceId = 0
+if (-not $DesktopOnly) { $serviceId = [int]$service.ProcessId; $roots += $serviceId }
 if ($HostProcessId -gt 0) { $roots += $HostProcessId }
 $identities = @{}
 foreach ($rootId in $roots) {
@@ -50,7 +54,7 @@ do {
         if (-not $cpuStart.ContainsKey($key)) { $cpuStart[$key] = if ($samples.Count -eq 0) { $ticks } else { [uint64]0 } }
         $cpuLast[$key] = $ticks
         $memory += [uint64]$p.WorkingSetSize
-        if ($p.ProcessId -eq $service.ProcessId) { $serviceMemory = [uint64]$p.WorkingSetSize }
+        if ($p.ProcessId -eq $serviceId) { $serviceMemory = [uint64]$p.WorkingSetSize }
     }
     if ($samples.Count -gt 0 -and @($previousKeys | Where-Object { $_ -notin $keys }).Count) { $churn = $true }
     $previousKeys = $keys
@@ -65,13 +69,14 @@ $maxMiB = ($samples | Measure-Object working_set_bytes -Maximum).Maximum / 1MB
 $limit = switch ($Mode) { 'service' { 40 }; 'window' { 250 }; 'tray' { 100 } }
 $report = [ordered]@{
     schema = 1; mode = $Mode; measured_seconds = $elapsed; settle_seconds = $SettleSeconds
+    complete_process_set = (-not $DesktopOnly)
     cpu_percent_one_logical_core = $cpuPercent; process_exits_observed = $churn
     average_working_set_mib = ($samples | Measure-Object working_set_bytes -Average).Average / 1MB
     maximum_working_set_mib = $maxMiB
     maximum_service_working_set_mib = ($samples | Measure-Object service_working_set_bytes -Maximum).Maximum / 1MB
-    cpu_target_pass = (-not $churn -and $cpuPercent -lt 0.5)
-    memory_target_pass = ($maxMiB -le $limit)
-    service_memory_target_pass = (($samples | Measure-Object service_working_set_bytes -Maximum).Maximum -le 40MB)
+    cpu_target_pass = $(if (-not $DesktopOnly) { -not $churn -and $cpuPercent -lt 0.5 } else { $null })
+    memory_target_pass = $(if (-not $DesktopOnly -or $maxMiB -gt $limit) { $maxMiB -le $limit } else { $null })
+    service_memory_target_pass = $(if (-not $DesktopOnly) { ($samples | Measure-Object service_working_set_bytes -Maximum).Maximum -le 40MB } else { $null })
     window_or_tray_state = 'Caller establishes the native window state; counters do not infer visibility.'
     attribution = 'Installed service PID, desktop PID when supplied, and recursive descendants; includes shared resident pages in each process working set.'
     samples = $samples.ToArray()
