@@ -9,7 +9,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 # Match the packaged installer: use only this edition's built-in modules,
 # including when launched by another PowerShell edition.
-$env:PSModulePath = Join-Path $PSHOME 'Modules'
+. (Join-Path $PSScriptRoot 'Use-ServiceSystemModules.ps1')
 if ($ValidationVm -and ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted')) {
     throw 'Virtual-adapter validation mode is limited to disposable GitHub-hosted VMs.'
 }
