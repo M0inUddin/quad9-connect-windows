@@ -20,6 +20,8 @@ fn mutation_commands_and_extra_parameters_are_rejected() {
         vec!["restore"],
         vec!["adapters", "--execute"],
         vec!["probe", "--json", "extra"],
+        vec!["upstream", "https://example.invalid"],
+        vec!["upstream", "--url", "https://example.invalid"],
     ] {
         let output = tool().args(args).output().unwrap();
         assert_eq!(output.status.code(), Some(2));

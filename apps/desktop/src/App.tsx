@@ -117,6 +117,13 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   const nativeGeneration = useRef(0);
   const refreshPending = useRef(false);
   const state = connectionState(status);
+  const directSummary = probe?.direct_upstream
+    ? probe.direct_upstream.endpoints.some(
+        (endpoint) => endpoint.outcome === "busy",
+      )
+      ? ". Direct Quad9 HTTPS: previous check is still finishing."
+      : `. Direct Quad9 HTTPS: ${probe.direct_upstream.endpoints.filter((endpoint) => endpoint.outcome === "https_response").length} of ${probe.direct_upstream.endpoints.length} endpoints replied.`
+    : "";
   const owned =
     state === "configured" || state === "conflict" || state === "recovery";
   const activeTargets = owned
@@ -379,7 +386,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
     if (request?.command.type === "run_diagnostics") setProbe(null);
     setBusy(
       request?.command.type === "run_diagnostics"
-        ? "Checking the system resolver"
+        ? "Checking DNS and Quad9 reachability"
         : request?.command.type === "enable_quad9"
           ? "Saving settings and enabling Quad9"
           : request?.command.type === "restore_previous_settings"
@@ -660,7 +667,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
             <span className="eyebrow">CHECK THE CURRENT PATH</span>
             <h2>Diagnostics</h2>
             <p className="intro">
-              Check one fresh lookup through the Windows system resolver.
+              Check the Windows system resolver and direct Quad9 reachability.
             </p>
             <div className="check-list">
               <div>
@@ -705,6 +712,37 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
                 </span>
                 {probe && <span className="timing">{probe.elapsed_ms} ms</span>}
               </div>
+              <div>
+                <Icon name="network" />
+                <span>
+                  <strong>Direct Quad9 HTTPS</strong>
+                  {probe?.direct_upstream ? (
+                    probe.direct_upstream.endpoints.map((endpoint) => (
+                      <small key={endpoint.address}>
+                        {endpoint.address}:{" "}
+                        {endpoint.outcome === "https_response"
+                          ? `HTTPS response · HTTP ${endpoint.http_status}`
+                          : endpoint.outcome === "timed_out"
+                            ? "Timed out"
+                            : endpoint.outcome === "busy"
+                              ? "Previous check is still finishing; retry shortly"
+                              : "No HTTPS response"}
+                      </small>
+                    ))
+                  ) : (
+                    <small>
+                      {probe
+                        ? "Not provided by this service version"
+                        : "Not checked"}
+                    </small>
+                  )}
+                </span>
+                {probe?.direct_upstream && (
+                  <span className="timing">
+                    {probe.direct_upstream.elapsed_ms} ms
+                  </span>
+                )}
+              </div>
             </div>
             {probe && (
               <p className="checked-at">
@@ -718,7 +756,9 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
             <aside className="context-note">
               This check queries <code>proto.on.quad9.net</code>. It does not
               establish how every application resolves DNS. Browser DNS and VPNs
-              may use another path.
+              may use another path. The separate HTTPS check contacts Quad9
+              directly. A response shows that the endpoint replied; it does not
+              verify a DNS answer or Windows DNS protection.
             </aside>
             <button
               className="primary-button"
@@ -840,7 +880,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
       <div className="sr-only" role="status" aria-live="polite">
         {busy ??
           (probe
-            ? `Diagnostic complete. ${probe.outcome === "doh_observed" ? "DNS over HTTPS observed" : `Could not verify DoH. ${probe.outcome.replaceAll("_", " ")}`}`
+            ? `Diagnostic complete. ${probe.outcome === "doh_observed" ? "DNS over HTTPS observed" : `Could not verify DoH. ${probe.outcome.replaceAll("_", " ")}`}${directSummary}`
             : copy[state][0])}
       </div>
     </div>

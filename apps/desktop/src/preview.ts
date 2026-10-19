@@ -9,12 +9,19 @@ export function previewTransport(): Transport {
     type: "status",
     revision: 0,
     recovery_blocked: mode === "recovery",
-    observed_matches: ["configured", "slow-probe", "failed-probe"].includes(
-      mode ?? "",
-    ),
-    journal: ["configured", "recovery", "slow-probe", "failed-probe"].includes(
-      mode ?? "",
-    )
+    observed_matches: [
+      "configured",
+      "slow-probe",
+      "failed-probe",
+      "upstream-unavailable",
+    ].includes(mode ?? ""),
+    journal: [
+      "configured",
+      "recovery",
+      "slow-probe",
+      "failed-probe",
+      "upstream-unavailable",
+    ].includes(mode ?? "")
       ? {
           phase: mode === "recovery" ? "recovery_required" : "committed",
           targets: [
@@ -103,6 +110,36 @@ export function previewTransport(): Transport {
             elapsed_ms: 42,
             checked_at_unix_seconds: Math.floor(Date.now() / 1000),
             scope: "One fresh system-resolver lookup of proto.on.quad9.net.",
+            direct_upstream:
+              mode === "legacy-probe"
+                ? undefined
+                : {
+                    elapsed_ms: 85,
+                    endpoints: [
+                      {
+                        address: "9.9.9.9",
+                        outcome:
+                          mode === "upstream-unavailable"
+                            ? "timed_out"
+                            : "https_response",
+                        http_status:
+                          mode === "upstream-unavailable"
+                            ? null
+                            : mode === "upstream-http-error"
+                              ? 503
+                              : 405,
+                        windows_error: null,
+                      },
+                      {
+                        address: "2620:fe::fe",
+                        outcome: "failed",
+                        http_status: null,
+                        windows_error: 12029,
+                      },
+                    ],
+                    scope:
+                      "Fixed Quad9 HTTPS endpoints only; no system resolver verification.",
+                  },
           },
         };
         break;

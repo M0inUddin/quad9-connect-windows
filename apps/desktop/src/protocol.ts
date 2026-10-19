@@ -39,6 +39,16 @@ export type Probe = {
   elapsed_ms: number;
   checked_at_unix_seconds: number;
   scope: string;
+  direct_upstream?: {
+    elapsed_ms: number;
+    endpoints: {
+      address: string;
+      outcome: "https_response" | "failed" | "timed_out" | "busy";
+      http_status: number | null;
+      windows_error: number | null;
+    }[];
+    scope: string;
+  };
   [key: string]: unknown;
 };
 export type Result =

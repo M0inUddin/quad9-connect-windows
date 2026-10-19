@@ -37,7 +37,7 @@ impl ServiceBackend for WindowsDnsBackend {
     }
     fn diagnostics(&mut self) -> Result<serde_json::Value, CoreError> {
         let probe =
-            quad9_native::probe_system_resolver().map_err(|e| CoreError::Backend(e.to_string()))?;
+            quad9_native::probe_diagnostics().map_err(|e| CoreError::Backend(e.to_string()))?;
         serde_json::to_value(probe).map_err(|e| CoreError::Backend(e.to_string()))
     }
     fn validate_scope(&mut self, targets: &[Target]) -> Result<(), CoreError> {

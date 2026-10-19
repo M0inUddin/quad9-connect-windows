@@ -55,7 +55,7 @@ test("adapter controls expose their group and diagnostic results are announced",
     .getByRole("button", { name: "Run diagnostics", exact: true })
     .click();
   await expect(page.getByRole("status")).toHaveText(
-    "Diagnostic complete. DNS over HTTPS observed",
+    "Diagnostic complete. DNS over HTTPS observed. Direct Quad9 HTTPS: 1 of 2 endpoints replied.",
   );
   await page.getByRole("button", { name: "Connection", exact: true }).click();
   await page
@@ -109,13 +109,13 @@ test("slow diagnostics leave navigation and theme controls responsive", async ({
     .getByRole("button", { name: "Run diagnostics", exact: true })
     .click();
   await expect(page.getByRole("status")).toHaveText(
-    "Checking the system resolver",
+    "Checking DNS and Quad9 reachability",
   );
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("radio", { name: "Dark", exact: true }).check();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect(page.getByRole("status")).toHaveText(
-    "Diagnostic complete. DNS over HTTPS observed",
+    "Diagnostic complete. DNS over HTTPS observed. Direct Quad9 HTTPS: 1 of 2 endpoints replied.",
   );
 });
 
@@ -128,7 +128,7 @@ test("a failed diagnostic cannot announce an earlier success", async ({
     .getByRole("button", { name: "Run diagnostics", exact: true })
     .click();
   await expect(page.getByRole("status")).toHaveText(
-    "Diagnostic complete. DNS over HTTPS observed",
+    "Diagnostic complete. DNS over HTTPS observed. Direct Quad9 HTTPS: 1 of 2 endpoints replied.",
   );
   await page
     .getByRole("button", { name: "Run diagnostics", exact: true })
