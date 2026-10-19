@@ -165,6 +165,10 @@ impl Drop for SettingsAllocation {
 }
 
 fn read_dns_settings(guid: GUID) -> Result<RawDnsReadback, NativeError> {
+    read_dns_family(guid, false)
+}
+
+pub(super) fn read_dns_family(guid: GUID, ipv6: bool) -> Result<RawDnsReadback, NativeError> {
     let module_name: Vec<u16> = "iphlpapi.dll\0".encode_utf16().collect();
     // SAFETY: The module is already loaded by the statically imported adapter
     // APIs. GetModuleHandle does not create an owned reference to release.
@@ -189,10 +193,12 @@ fn read_dns_settings(guid: GUID) -> Result<RawDnsReadback, NativeError> {
     let free: FreeDns = unsafe { mem::transmute(free) };
     let mut settings = DNS_INTERFACE_SETTINGS3 {
         Version: DNS_INTERFACE_SETTINGS_VERSION3,
+        Flags: u64::from(ipv6),
         ..Default::default()
     };
-    // SAFETY: Version 3 identifies the allocated structure size. Flags stays
-    // zero as required by the getter, and all fields start initialized.
+    // SAFETY: Version 3 identifies the structure size. The family selector is
+    // validated in disposable Windows VMs, with registry crosschecks before
+    // mutation. Other input fields remain zero.
     let code = unsafe { get(guid, (&mut settings as *mut DNS_INTERFACE_SETTINGS3).cast()) };
     if code != 0 {
         return Err(win_error("GetInterfaceDnsSettings", code));
@@ -269,25 +275,7 @@ impl Drop for QueryRecords {
     }
 }
 
-pub fn query_protocol() -> Result<Vec<String>, NativeError> {
-    let name: Vec<u16> = format!("{PROBE_NAME}\0").encode_utf16().collect();
-    let mut records = ptr::null_mut();
-    // SAFETY: Inputs are fixed and valid. DnsQuery_W returns wide-character
-    // records despite the windows-sys declaration using DNS_RECORDA pointers.
-    let code = unsafe {
-        DnsQuery_W(
-            name.as_ptr(),
-            DNS_TYPE_TEXT,
-            DNS_QUERY_BYPASS_CACHE | DNS_QUERY_NO_HOSTS_FILE | DNS_QUERY_TREAT_AS_FQDN,
-            ptr::null_mut(),
-            &mut records,
-            ptr::null_mut(),
-        )
-    };
-    let allocation = QueryRecords(records.cast());
-    if code != 0 {
-        return Err(win_error("DnsQuery_W", code));
-    }
+fn copy_query_records(allocation: QueryRecords) -> Result<Vec<String>, NativeError> {
     let mut values = Vec::new();
     let mut current = allocation.0;
     let mut count = 0;
@@ -320,4 +308,126 @@ pub fn query_protocol() -> Result<Vec<String>, NativeError> {
         current = record.pNext;
     }
     Ok(values)
+}
+
+use std::{
+    cell::UnsafeCell,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc, Mutex,
+    },
+};
+static QUERY_PENDING: AtomicBool = AtomicBool::new(false);
+type QueryResponse = Result<Vec<String>, NativeError>;
+
+struct QueryAllocation {
+    name: Vec<u16>,
+    request: UnsafeCell<DNS_QUERY_REQUEST>,
+    result: UnsafeCell<DNS_QUERY_RESULT>,
+    cancel: UnsafeCell<DNS_QUERY_CANCEL>,
+    sender: Mutex<Option<mpsc::SyncSender<QueryResponse>>>,
+}
+
+// SAFETY: The request and name become immutable before DnsQueryEx starts.
+// Windows alone writes result/cancel during the documented query lifetime.
+// The caller reads synchronous results only when no callback will occur; the
+// callback reads asynchronous results only after Windows reports completion.
+// Cancellation uses the API's cancellation handle without reading result data.
+unsafe impl Send for QueryAllocation {}
+// SAFETY: The same lifetime rules apply to shared references; sender uses a mutex.
+unsafe impl Sync for QueryAllocation {}
+
+unsafe fn finish_query(result: *mut DNS_QUERY_RESULT) -> Result<Vec<String>, NativeError> {
+    // SAFETY: Windows has completed this initialized result structure.
+    let result = unsafe { &*result };
+    let records = QueryRecords(result.pQueryRecords.cast());
+    if result.QueryStatus != 0 {
+        return Err(win_error("DnsQueryEx", result.QueryStatus as u32));
+    }
+    copy_query_records(records)
+}
+
+unsafe extern "system" fn query_complete(context: *const c_void, result: *mut DNS_QUERY_RESULT) {
+    // SAFETY: Exactly one callback reference was created by Arc::into_raw.
+    let allocation = unsafe { Arc::from_raw(context.cast::<QueryAllocation>()) };
+    // SAFETY: The callback is invoked only after this result is complete.
+    let response = unsafe { finish_query(result) };
+    if let Ok(mut sender) = allocation.sender.lock() {
+        if let Some(sender) = sender.take() {
+            let _ = sender.send(response);
+        }
+    }
+    QUERY_PENDING.store(false, Ordering::Release);
+}
+
+pub fn query_protocol(timeout: std::time::Duration) -> Result<Vec<String>, NativeError> {
+    if QUERY_PENDING
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return Err(NativeError::InvalidData(
+            "A previous DNS cancellation is still completing".into(),
+        ));
+    }
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let allocation = Arc::new(QueryAllocation {
+        name: format!("{PROBE_NAME}\0").encode_utf16().collect(),
+        request: UnsafeCell::new(DNS_QUERY_REQUEST::default()),
+        result: UnsafeCell::new(DNS_QUERY_RESULT {
+            Version: DNS_QUERY_RESULTS_VERSION1,
+            ..Default::default()
+        }),
+        cancel: UnsafeCell::new(DNS_QUERY_CANCEL::default()),
+        sender: Mutex::new(Some(sender)),
+    });
+    let callback_reference = Arc::into_raw(allocation.clone());
+    // SAFETY: No native access or callback can occur until the following call.
+    unsafe {
+        *allocation.request.get() = DNS_QUERY_REQUEST {
+            Version: DNS_QUERY_REQUEST_VERSION1,
+            QueryName: allocation.name.as_ptr(),
+            QueryType: DNS_TYPE_TEXT,
+            QueryOptions: (DNS_QUERY_BYPASS_CACHE
+                | DNS_QUERY_NO_HOSTS_FILE
+                | DNS_QUERY_TREAT_AS_FQDN) as u64,
+            pQueryCompletionCallback: Some(query_complete),
+            pQueryContext: callback_reference.cast_mut().cast(),
+            ..Default::default()
+        };
+    }
+    // SAFETY: The stable allocation owns every request/result/cancel buffer.
+    // The callback's strong reference keeps it alive after a caller timeout.
+    let code = unsafe {
+        DnsQueryEx(
+            allocation.request.get(),
+            allocation.result.get(),
+            allocation.cancel.get(),
+        )
+    };
+    if code != windows_sys::Win32::Foundation::DNS_REQUEST_PENDING {
+        // SAFETY: Synchronous completion does not invoke the completion callback.
+        unsafe {
+            drop(Arc::from_raw(callback_reference));
+        }
+        QUERY_PENDING.store(false, Ordering::Release);
+        if code != 0 {
+            return Err(win_error("DnsQueryEx", code as u32));
+        }
+        // SAFETY: The synchronous result is complete and no callback can race.
+        return unsafe { finish_query(allocation.result.get()) };
+    }
+    match receiver.recv_timeout(timeout) {
+        Ok(response) => response,
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            // SAFETY: allocation remains live and cancellation is valid even if
+            // completion races this deadline. The callback frees its own reference.
+            unsafe {
+                DnsCancelQuery(allocation.cancel.get());
+            }
+            Err(NativeError::Deadline)
+        }
+        Err(_) => Err(NativeError::InvalidData(
+            "DNS completion callback ended unexpectedly".into(),
+        )),
+    }
 }

@@ -6,13 +6,22 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+vm-validation = []
+
 [dependencies]
 quad9-core = { path = "../quad9-core" }
 serde.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_System_LibraryLoader"] }
+windows-sys = { workspace = true, features = [
+    "Win32_System_LibraryLoader", "Win32_System_Registry", "Win32_Storage_FileSystem",
+    "Win32_Security", "Win32_Security_Authorization", "Win32_System_IO",
+    "Win32_System_Pipes", "Win32_System_Threading", "Win32_System_Services",
+    "Win32_System_SystemInformation", "Win32_UI_Shell", "Win32_System_Com",
+    "Win32_System_WindowsProgramming",
+] }
 
 [lints]
 workspace = true

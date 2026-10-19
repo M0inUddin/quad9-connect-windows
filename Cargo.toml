@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/quad9-core", "crates/quad9-native", "crates/quad9-cli"]
+members = ["crates/quad9-core", "crates/quad9-native", "crates/quad9-cli", "crates/quad9-service"]
 resolver = "2"
 
 [workspace.package]
