@@ -46,6 +46,9 @@ fn run(stop: &AtomicBool, ready: Ready, backend: WindowsDnsBackend) -> Result<()
         Controller::start(backend, store).map_err(|e| NativeError::InvalidData(e.to_string()))?;
     service::serve(stop, ready, |actor, bytes| {
         let response = match serde_json::from_slice::<Request>(bytes) {
+            Ok(request) if request.revision().is_some()
+                && directory.path().join("installer-maintenance").try_exists().unwrap_or(true) =>
+                Response::error(&request.id, "maintenance", "Installation or recovery is in progress. Retry after the administrator finishes repair."),
             Ok(request) => controller.dispatch(actor, request),
             Err(_) => Response::error(
                 "",
@@ -75,4 +78,53 @@ pub fn send(request: &Request) -> Result<Response, String> {
         return Err("The service response does not match this request".into());
     }
     Ok(response)
+}
+
+/// The exclusive store lock prevents racing either the service or another repair.
+/// This command accepts neither an Enable operation nor a caller-selected path.
+pub fn maintenance(restore: bool) -> Result<(), String> {
+    let actor = service::require_administrator().map_err(|e| e.to_string())?;
+    let directory = MachineDirectory::open().map_err(|e| e.to_string())?;
+    let mut store =
+        AtomicFiles::open_protected_directory(directory.path()).map_err(|e| e.to_string())?;
+    if !restore {
+        crate::maintenance::check(&mut store).map_err(|e| e.to_string())?;
+        println!(r#"{{"compatible":true,"protocol_version":1,"storage_version":1}}"#);
+        return Ok(());
+    }
+    let mut controller =
+        Controller::start(WindowsDnsBackend::new(), store).map_err(|e| e.to_string())?;
+    let status = controller.dispatch(
+        &actor,
+        Request {
+            version: PROTOCOL_VERSION,
+            id: "maintenance-status".into(),
+            command: Command::GetStatus,
+        },
+    );
+    let ResultBody::Status { revision, .. } = status.result else {
+        return Err("Recovery status is unavailable; retain the service and journal".into());
+    };
+    let response = controller.dispatch(
+        &actor,
+        Request {
+            version: PROTOCOL_VERSION,
+            // Offline invocations must not replay an earlier restoration receipt.
+            id: format!("maintenance-{}-{}", std::process::id(), revision),
+            command: Command::RestorePreviousSettings {
+                expected_revision: revision,
+            },
+        },
+    );
+    println!(
+        "{}",
+        serde_json::to_string(&response).map_err(|e| e.to_string())?
+    );
+    match response.result {
+        ResultBody::Restored { complete: true, .. } => Ok(()),
+        _ => Err(
+            "DNS restoration is incomplete. Retain the installed service and recovery records."
+                .into(),
+        ),
+    }
 }

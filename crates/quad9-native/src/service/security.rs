@@ -356,6 +356,25 @@ fn membership(token: HANDLE, group: &[u32]) -> Result<bool, NativeError> {
     Ok(member != 0)
 }
 
+/// Offline recovery is deliberately unavailable to ordinary service operators.
+pub fn require_administrator() -> Result<String, NativeError> {
+    let mut token = null_handle();
+    // SAFETY: Query the current process token through a valid output pointer.
+    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
+        return Err(last_error("OpenProcessToken"));
+    }
+    let token = Handle::checked(token, "OpenProcessToken")?;
+    let actor = token_sid(token.0)?;
+    // A null handle makes CheckTokenMembership use the effective thread token.
+    // Deny-only administrator membership in an unelevated token does not qualify.
+    if actor != "S-1-5-18" && !membership(null_handle(), &sid(WinBuiltinAdministratorsSid)?)? {
+        return Err(invalid(
+            "Offline maintenance requires an elevated administrator",
+        ));
+    }
+    Ok(actor)
+}
+
 pub(super) fn token_sid(token: HANDLE) -> Result<String, NativeError> {
     let mut size = 0;
     // SAFETY: This first call only requests the size of TOKEN_USER.

@@ -4,6 +4,8 @@ Use `feat/<description>` branches for features and `fix/<description>` branches 
 
 The [project specification](docs/project-specification.md) defines scope. The [implementation status](docs/implementation-status.md) records progress and release gates. Version 0.1 is in development and is not a supported desktop release.
 
+For the unsigned NSIS package, build prerequisites, upgrade behavior, and recovery commands, see [Windows development installer](docs/windows-installer.md). Generated installers, toolchains, payload staging, and validation reports belong in ignored `artifacts/`.
+
 ## Build the Rust workspace
 
 Install [Rust with rustup](https://rust-lang.org/tools/install/). The repository pins the toolchain and formatting tools. Windows developers should use the default MSVC toolchain and install the C++ build tools and Windows SDK required by Rust. The platform-independent transaction tests also run on Linux.

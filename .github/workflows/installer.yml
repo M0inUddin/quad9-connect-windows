@@ -1,0 +1,65 @@
+name: Windows installer
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lifecycle:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          toolchain: 1.99.1
+      - name: Save and validate native DNS baseline
+        run: ./scripts/validation/Test-NativeDnsContract.ps1
+      - run: cargo build --release --locked -p quad9-service
+      - run: npm ci --no-audit --no-fund
+        working-directory: apps/desktop
+      - run: npm run tauri -- build --no-bundle
+        working-directory: apps/desktop
+      - name: Get checksum-pinned NSIS and build the unsigned installer
+        run: |
+          $nsis = ./scripts/Get-InstallerToolchain.ps1
+          $installer = ./scripts/Build-WindowsInstaller.ps1 -MakeNsis $nsis -BuildTarget x86_64-pc-windows-msvc
+          "QUAD9_NSIS=$nsis" >> $env:GITHUB_ENV
+          "QUAD9_INSTALLER=$installer" >> $env:GITHUB_ENV
+      - name: Build the VM-only adapter fixture separately from the distributable
+        run: cargo build --locked -p quad9-service --features vm-validation --target-dir artifacts/vm-target
+      - name: Exercise real NSIS install, upgrade, rollback, repair, and uninstall
+        run: |
+          ./scripts/validation/Test-WindowsInstaller.ps1 -Installer $env:QUAD9_INSTALLER -MakeNsis $env:QUAD9_NSIS -ServiceBinary ./target/release/quad9-service.exe -DesktopBinary ./apps/desktop/src-tauri/target/release/quad9-desktop.exe -VmServiceBinary ./artifacts/vm-target/debug/quad9-service.exe
+      - name: Always restore the original VM DNS baseline
+        if: always()
+        run: |
+          $service = Get-Service Quad9Connect -ErrorAction SilentlyContinue
+          if ($service -and $service.Status -ne 'Stopped') { Stop-Service Quad9Connect -ErrorAction Continue }
+          ./scripts/validation/Test-NativeDnsContract.ps1 -RestoreOnly
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: success()
+        with:
+          name: quad9-windows-installer-unsigned-development
+          path: |
+            artifacts/installer/*-setup.exe
+            artifacts/installer/*.sha256
+            artifacts/installer/*.build.json
+          retention-days: 14
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: installer-validation
+          path: |
+            artifacts/installer-validation/*.json
+            artifacts/installer-validation/*.out
+            artifacts/installer-validation/*.err
+          retention-days: 7

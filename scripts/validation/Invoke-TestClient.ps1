@@ -1,9 +1,16 @@
-param([string] $RequestFile, [string] $Mode = 'request')
+param([string] $RequestFile, [string] $Mode = 'request', [string] $BinaryPath)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = $OutputEncoding
 $binary = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Quad9Connect\quad9-service.exe'
+if ($BinaryPath) { $binary = $BinaryPath }
+if ($Mode -eq 'maintenance-check') { & $binary maintenance check; exit $LASTEXITCODE }
+if ($Mode -eq 'deny-install') {
+    $path = Join-Path (Split-Path $binary -Parent) 'unauthorized-check.tmp'
+    try { [IO.File]::WriteAllText($path, 'denied'); throw 'Operator unexpectedly wrote a service binary directory.' }
+    catch [UnauthorizedAccessException] { Write-Output 'installation-denied'; exit 0 }
+}
 if ($Mode -eq 'deny-storage') {
     $path = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'Quad9Connect\unauthorized-check.tmp'
     try { [IO.File]::WriteAllText($path, 'denied'); throw 'Operator unexpectedly wrote protected recovery data.' }

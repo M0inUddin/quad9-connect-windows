@@ -6,6 +6,8 @@ Usage:
   quad9-service --help
   quad9-service service       Start through the Windows Service Control Manager
   quad9-service request       Read one JSON request from stdin and write its response
+  quad9-service maintenance check    Offline, read-only upgrade compatibility check
+  quad9-service maintenance restore  Offline, ownership-aware administrator recovery
 
 Service installation requires an administrator. DNS changes require an
 authorized local operator and an explicit versioned request.
@@ -35,6 +37,12 @@ fn main() -> ExitCode {
                     .map_err(|e| e.to_string())
             }
             [command] if command == "request" => request(),
+            [command, operation] if command == "maintenance" && operation == "check" => {
+                quad9_service::host::maintenance(false)
+            }
+            [command, operation] if command == "maintenance" && operation == "restore" => {
+                quad9_service::host::maintenance(true)
+            }
             _ => {
                 eprintln!("{HELP}");
                 return ExitCode::from(2);

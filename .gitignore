@@ -54,6 +54,8 @@ next-env.d.ts
 *.msix
 *.msixbundle
 *.pdb
+*-setup.exe
+*.exe.sha256
 
 # Desktop frontend and Tauri generated files
 **/node_modules/
