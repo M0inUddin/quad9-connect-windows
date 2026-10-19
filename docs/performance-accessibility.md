@@ -30,6 +30,8 @@ Measure idle resources separately, with CDP, axe, and screen readers stopped. Su
 
 The resource driver uses an isolated profile and disconnects CDP before each counter interval. It measures the visible window, a retained hidden window, and the idle tray separately. The native Open path requests foreground activation before the visible-window interval. Every sample independently records foreground ownership. `-RequireForeground` leaves budget decisions unassessed if Windows did not keep the host in the foreground throughout that interval. This prevents an inactive memory-saving view from being reported as an active-window budget pass.
 
+Foreground sampling now holds a scoped display/system execution request by default. `-KeepDisplayAvailable:$false` opts out; other modes make no request. The sampler restores its thread's previous execution state in `finally`, including on failure, and records `sampler_display_awake_requested`. This uses [SetThreadExecutionState](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setthreadexecutionstate), without changing power or security policies or sending input. It does not force foreground ownership, stop the screen saver, prevent a manual lock, or override manual sleep. Tests under Windows PowerShell 5.1 and PowerShell 7 cover acquisition, nested ownership, exception cleanup, and repeated disposal.
+
 A debugging listener stays enabled so the driver can exercise the native close handler between modes. A busy/uncertain window remains alive when hidden; the test checks it reopens and responds before releasing its reservation. The idle tray interval must have no remaining WebView2 descendants. The driver sends no DNS mutation and leaves Windows settings unchanged.
 
 Each full measurement settles for 30 seconds and samples for at least five minutes. Attribution includes the installed service, the supplied host, and all recursive descendants, including WebView2. Working sets include shared resident pages in every process that maps them, as required by the specification's complete process-set target. CPU is the change in accumulated kernel and user time divided by elapsed wall time, expressed as a percentage of one logical CPU. It is not divided by the machine's core count.
@@ -114,3 +116,21 @@ The repeated interval began in the foreground and later lost it. Both intervals 
 The repeated interval had six WebView processes at every snapshot, yet job accounting detected a child that started and exited between snapshots. A separate instrumented trace identified short-lived WebView `unzip.mojom.Unzipper` utilities. That trace does not establish the cause of all CPU usage. The measured intervals had no CDP client, verbose browser logging, axe scan, or screen reader active. Windows settings and DNS remained unchanged.
 
 Foreground stability, simultaneous service and desktop counters, the main-window memory limit, and measurements on the specified reference machine remain release gates. The service startup-log changes introduced after these measurements need their own physical service/resource validation.
+
+## Simultaneous service and desktop follow-up
+
+The [sanitized combined record](validation/windows11-26300-combined-resources.json) identifies the clean release MSVC candidate from [installer run 39303405880](https://github.com/M0inUddin/quad9-connect-windows/actions/runs/39303405880). This candidate includes the service startup events introduced in PR #14 and predates direct-upstream diagnostics. It ran on the same Windows 11 development host described above.
+
+The real installer enrolled a temporary standard local account. A fresh secondary-logon token launched the packaged UI alongside the LocalSystem service. The UI reached its authenticated "Ready when you are" state with DNS management off. The account was disabled after launch and removed after testing. The launcher exited before settling; cumulative job counters retain exited desktop descendants without including the launcher's earlier CPU. CDP clients and browser/accessibility tests were disconnected during counter intervals.
+
+| Simultaneous interval | Seconds after 30 seconds settling | CPU, percent of one logical CPU | Combined peak working set | Service peak | Foreground samples |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Initial window | 301.26 | 4.7457% | 415.03 MiB | 10.63 MiB | 50 of 107 |
+| Gated window retry | 302.18 | 0.5791% | 220.30 MiB | 10.30 MiB | 108 of 114 |
+| Idle tray | 300.91 | 0.0415% | 42.20 MiB | 10.43 MiB | Not required |
+
+The tray passed the simultaneous CPU, complete-process memory, and service-memory limits, with zero WebView descendants at every sample. Both window intervals retain unassessed budget decisions because they lost foreground. The retry lost it only during its final 13 seconds, but still does not qualify. Account profiles and foreground conditions differ between intervals, so these observations do not establish an optimization effect.
+
+A read-only power query found a three-minute display-off timeout. Its role in foreground loss is unproven. A separate bounded display/system execution request was then tried while waiting for another manual focus attempt; the wait expired without another measurement. That request was released. The sampler's own scoped request described above was added afterward for future runs.
+
+Both installations passed safe cleanup with the exact native DNS baseline unchanged and the temporary service and operator group removed. Fresh physical standard-user authorization and simultaneous tray resources are now covered on this candidate. A [native screenshot](screenshots/README.md#native-release-client-authorized-service) shows the authenticated off state. Successful LocalSystem startup emitted the fixed `controller_starting` and `controller_started` records; the broader startup failure, retention, and physical compatibility matrix remains separate. Foreground stability, startup, reference-machine measurements, and the remaining acceptance matrix are still open.
