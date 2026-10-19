@@ -214,6 +214,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
       "diagnostic-result",
       (event) => {
         if (event.payload.generation < nativeGeneration.current) return;
+        nativeGeneration.current = event.payload.generation;
         const result = event.payload.result;
         if ("Err" in result) setError(result.Err);
         else if (result.Ok.result.type === "diagnostics")
