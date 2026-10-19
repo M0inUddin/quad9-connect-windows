@@ -54,6 +54,12 @@ function Assert-HostBaseline {
 }
 function Remove-HostTestInstallation {
     param($Plan)
+    if (-not (Test-Path -LiteralPath (Join-Path $runRoot 'installation-started'))) {
+        $recovery = Restore-HostDnsBaseline $Plan
+        if (-not $recovery.Complete) { throw ($recovery.Issues -join ' ') }
+        Assert-HostBaseline $Plan
+        return
+    }
     $service = Get-CimInstance Win32_Service -Filter "Name='Quad9Connect'"
     if ($null -ne $service) {
         if ($service.PathName -ne ('"{0}" service' -f $installed) -or
@@ -216,6 +222,7 @@ try {
     $record.native_roundtrip = 'passed'
     $record.stage = 'service_install'
     $operator = ([Security.Principal.SecurityIdentifier]$OperatorSid).Translate([Security.Principal.NTAccount]).Value
+    New-Item -ItemType File -Path (Join-Path $runRoot 'installation-started') | Out-Null
     & (Join-Path $runRoot 'Install-DevelopmentService.ps1') -BinaryPath (Join-Path $runRoot 'quad9-service.exe') -OperatorAccount $operator
     $service = Get-CimInstance Win32_Service -Filter "Name='Quad9Connect'"
     if ($service.StartName -ne 'LocalSystem') { throw 'The service did not start as LocalSystem.' }
