@@ -121,6 +121,23 @@ try {
     } finally { Remove-Item -LiteralPath $gate }
     Enable-VM
     $journalHash = (Get-FileHash -LiteralPath (Join-Path $data 'dns.journal.json')).Hash
+    # Simulate termination midway through copying a new directory, before any
+    # service replacement. Retry retains the partial bytes and resumes safely.
+    $partial = $initial.versions[0] | ConvertTo-Json -Depth 15 | ConvertFrom-Json
+    $partial.id = 'e' * 64
+    $partialPath = Join-Path $root ('versions\' + $partial.id)
+    $lifecycleModule = Import-Module (Join-Path $repo 'installer\windows\InstallerLifecycle.psm1') -Force -PassThru
+    & $lifecycleModule {
+        param($Candidate, $Path)
+        Write-AtomicJson 'staging.json' ([pscustomobject]@{ schema = 1; candidate = $Candidate })
+        New-ProtectedDirectory $Path
+    } $partial $partialPath
+    [IO.File]::WriteAllText((Join-Path $partialPath 'quad9-service.exe'), 'interrupted copy')
+    Run-Setup $Installer '/S'
+    if ((Test-Path -LiteralPath $partialPath) -or (Test-Path -LiteralPath (Join-Path $root 'staging.json'))) { throw 'Partial staging was not reconciled.' }
+    $quarantined = @(Get-ChildItem -LiteralPath (Join-Path $root 'retained-staging') -Directory)
+    if ($quarantined.Count -ne 1 -or [IO.File]::ReadAllText((Join-Path $quarantined[0].FullName 'quad9-service.exe')) -cne 'interrupted copy') { throw 'Interrupted copy bytes were not retained.' }
+    Assert-Active
     $upgrade = & (Join-Path $repo 'scripts\Build-WindowsInstaller.ps1') -ServiceBinary $ServiceBinary -DesktopBinary $DesktopBinary -MakeNsis $MakeNsis -OutputDirectory $output -Version '0.1.0-dev.upgrade'
     Run-Setup $upgrade '/S'
     $upgraded = State
@@ -144,6 +161,8 @@ try {
     # Simulate an interrupted replacement with durable pending metadata and a gate.
     $state = State
     $candidate = @($state.versions | Where-Object id -eq $initial.current)[0]
+    Remove-Item -LiteralPath (Join-Path (Join-Path $root ('versions\' + $candidate.id)) 'quad9-desktop.exe')
+    Remove-Item -LiteralPath (Join-Path (Join-Path $root ('versions\' + $candidate.id)) 'Uninstall.exe')
     @{ schema = 1; previous = $state; candidate = $candidate; enrollment = $state.enrollment } | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $root 'pending.json')
     [IO.File]::WriteAllText($gate, '')
     Run-Setup $upgrade '/S'
@@ -188,7 +207,7 @@ try {
     Assert-Baseline
     Run-Setup (Join-Path (Current-Directory) 'Uninstall.exe') '/S'
     Assert-Baseline
-    [ordered]@{ result = 'passed'; first_install_dns_unchanged = $true; standard_user_authorization = $true; maintenance_gate = $true; active_upgrade = $true; failed_upgrade_rollback = $true; interrupted_upgrade = $true; conflict_blocks_uninstall = $true; administrator_repair = $true; uninstall_restores_dns = $true; reinstall = $true; os_build = [Environment]::OSVersion.Version.Build } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'installer-validation.json')
+    [ordered]@{ result = 'passed'; first_install_dns_unchanged = $true; standard_user_authorization = $true; maintenance_gate = $true; partial_staging_recovered = $true; active_upgrade = $true; failed_upgrade_rollback = $true; interrupted_upgrade = $true; missing_candidate_ui_recovered = $true; conflict_blocks_uninstall = $true; quiet_uninstall_exit_code = $true; administrator_repair = $true; uninstall_restores_dns = $true; reinstall = $true; os_build = [Environment]::OSVersion.Version.Build } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'installer-validation.json')
     Write-Output 'Real NSIS installer lifecycle passed on this disposable VM.'
 } finally {
     $service = Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue

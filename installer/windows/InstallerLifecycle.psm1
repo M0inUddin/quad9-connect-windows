@@ -35,8 +35,6 @@ function Assert-TrustedAcl([string] $Path, [bool] $AllowRead = $true, [bool] $Re
 
 function New-ProtectedDirectory([string] $Path) {
     if (Test-Path -LiteralPath $Path) { throw "Installation directory already exists: $Path" }
-    # Every caller uses a fixed Program Files child whose parent is already protected.
-    New-Item -ItemType Directory -Path $Path | Out-Null
     $acl = [Security.AccessControl.DirectorySecurity]::new()
     $acl.SetOwner([Security.Principal.SecurityIdentifier]'S-1-5-32-544')
     $acl.SetAccessRuleProtection($true, $false)
@@ -47,7 +45,9 @@ function New-ProtectedDirectory([string] $Path) {
     }
     $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]'S-1-5-32-545',
         [Security.AccessControl.FileSystemRights]::ReadAndExecute, $inherit, 'None', 'Allow'))
-    Set-Acl -LiteralPath $Path -AclObject $acl
+    # Apply the complete DACL atomically at creation, including on first install.
+    if ($PSVersionTable.PSEdition -eq 'Desktop') { [IO.Directory]::CreateDirectory($Path, $acl) | Out-Null }
+    else { [IO.FileSystemAclExtensions]::CreateDirectory($acl, $Path) | Out-Null }
     Assert-ProtectedDirectory $Path
 }
 
@@ -80,24 +80,31 @@ function Read-InstallJson([string] $Name) {
     return $value
 }
 
-function Assert-Manifest([object] $Manifest, [string] $Directory, [switch] $Installed, [switch] $RecoveryOnly) {
+function Assert-PayloadMetadata([object] $Manifest, [switch] $Installed) {
     if ($Manifest.schema -ne 1 -or $Manifest.protocol -ne 1 -or $Manifest.storage -ne 1 -or
         $Manifest.id -cnotmatch '^[a-f0-9]{64}$' -or $Manifest.version -notmatch '^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$') {
         throw 'Unsupported installer payload format.'
     }
-    Assert-RegularPath $Directory $true
-    if ($Installed) { Assert-ProtectedDirectory $Directory } else { Assert-ProtectedDirectory $Directory $false }
     $names = @($script:PayloadNames)
     if ($Installed) { $names += 'Uninstall.exe' }
     if (@($Manifest.files).Count -ne $names.Count) { throw 'Unexpected payload inventory.' }
     foreach ($name in $names) {
         $entries = @($Manifest.files | Where-Object { $_.name -ceq $name })
         if ($entries.Count -ne 1 -or $entries[0].sha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Invalid payload inventory.' }
+    }
+}
+
+function Assert-Manifest([object] $Manifest, [string] $Directory, [switch] $Installed, [switch] $RecoveryOnly) {
+    Assert-PayloadMetadata $Manifest -Installed:$Installed
+    Assert-RegularPath $Directory $true
+    if ($Installed) { Assert-ProtectedDirectory $Directory } else { Assert-ProtectedDirectory $Directory $false }
+    foreach ($entry in $Manifest.files) {
+        $name = $entry.name
         if ($RecoveryOnly -and $name -cne 'quad9-service.exe') { continue }
         $path = Join-Path $Directory $name
         Assert-RegularPath $path
         if ($Installed) { Assert-TrustedAcl $path }
-        if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ine $entries[0].sha256) { throw "Installed payload checksum mismatch: $name" }
+        if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ine $entry.sha256) { throw "Installed payload checksum mismatch: $name" }
     }
 }
 
@@ -247,21 +254,24 @@ function Remove-ServiceRegistration {
 
 function Restore-PendingInstallation([object] $Pending) {
     $candidate = $Pending.candidate
-    Assert-Manifest $candidate (Get-VersionPath $candidate) -Installed
+    # Stopping an identified SCM service does not execute the candidate's files.
+    # Quarantined desktop/uninstaller files must not block the old service.
+    Assert-PayloadMetadata $candidate -Installed
     $previous = $Pending.previous
     $manifests = @($candidate)
-    if ($previous -and $previous.installed) { $manifests += Get-CurrentManifest $previous }
+    if ($previous -and $previous.installed) { $manifests += Get-CurrentManifest $previous -RecoveryOnly }
     Stop-InstalledService $manifests
     if ($previous -and $previous.installed) {
-        $old = Get-CurrentManifest $previous
+        $old = Get-CurrentManifest $previous -RecoveryOnly
         Set-ServiceVersion $old
         Start-InstalledService $old -AllowRecovery
         # Keep the rejected payload in the known inventory for a later uninstall.
         if ($candidate.id -notin @($previous.versions.id)) { $previous.versions = @($previous.versions) + $candidate }
         Write-AtomicJson 'installation.json' $previous
-        Publish-Installation $previous
+        try { Publish-Installation $previous } catch { Write-Warning 'The previous service is running. Reinstall to repair unrelated application files.' }
     } else {
         if (Assert-ServiceIdentity @($candidate)) {
+            Assert-Manifest $candidate (Get-VersionPath $candidate) -Installed -RecoveryOnly
             try { Invoke-Offline $candidate 'restore' }
             catch { Set-ServiceVersion $candidate; Start-Service -Name Quad9Connect; throw }
             Remove-ServiceRegistration
@@ -272,6 +282,35 @@ function Restore-PendingInstallation([object] $Pending) {
     }
     Clear-MaintenanceGate
     Remove-Item -LiteralPath (Join-Path $script:Root 'pending.json')
+}
+
+function Resolve-StagedCandidate([object] $Staging, [object] $State) {
+    $candidate = $Staging.candidate
+    Assert-PayloadMetadata $candidate -Installed
+    if ($State -and @($State.versions | Where-Object { $_.id -ceq $candidate.id }).Count) {
+        # Pending recovery already placed it in the known cleanup inventory.
+        Remove-Item -LiteralPath (Join-Path $script:Root 'staging.json')
+        return
+    }
+    $allowed = @($candidate)
+    if ($State -and $State.installed) { $allowed += Get-CurrentManifest $State -RecoveryOnly }
+    $service = Assert-ServiceIdentity $allowed
+    if ($service -and $service.PathName -ceq (Get-ServiceCommand $candidate)) { throw 'A staged candidate is registered without replacement intent. Preserve it for administrator recovery.' }
+    $source = Get-VersionPath $candidate
+    if (Test-Path -LiteralPath $source) {
+        Assert-RegularPath $source $true
+        Assert-TrustedAcl $source
+        $retained = Join-Path $script:Root 'retained-staging'
+        if (-not (Test-Path -LiteralPath $retained)) { New-ProtectedDirectory $retained }
+        Assert-ProtectedDirectory $retained
+        $destination = Join-Path $retained ($candidate.id + '-' + [guid]::NewGuid().ToString('N'))
+        # Both absolute paths are fixed descendants of the protected install root.
+        # Directory.Move is a same-volume rename and never traverses nested links.
+        if ([IO.Path]::GetFullPath($source) -ine (Join-Path (Join-Path $script:Root 'versions') $candidate.id) -or
+            (Split-Path ([IO.Path]::GetFullPath($destination)) -Parent) -ine $retained) { throw 'Unexpected staging recovery scope.' }
+        [IO.Directory]::Move($source, $destination)
+    }
+    Remove-Item -LiteralPath (Join-Path $script:Root 'staging.json')
 }
 
 function Test-WebView2 {
@@ -320,16 +359,19 @@ function Install-Quad9Payload([string] $Payload, [string] $OperatorSid, [object]
         $manifest = $known[0]
         Assert-Manifest $manifest $destination -Installed
     } else {
-        New-ProtectedDirectory $destination
-        foreach ($name in $script:PayloadNames) { Copy-Item -LiteralPath (Join-Path $Payload $name) -Destination (Join-Path $destination $name) }
         $uninstaller = Join-Path $Payload 'Uninstall.exe'
         Assert-RegularPath $uninstaller
-        Copy-Item -LiteralPath $uninstaller -Destination (Join-Path $destination 'Uninstall.exe')
         $manifest.files = @($manifest.files) + [pscustomobject]@{ name = 'Uninstall.exe'; sha256 = (Get-FileHash -LiteralPath $uninstaller).Hash }
+        # Persist ownership before creating or partially copying the directory.
+        Write-AtomicJson 'staging.json' ([pscustomobject]@{ schema = 1; candidate = $manifest })
+        New-ProtectedDirectory $destination
+        foreach ($name in $script:PayloadNames) { Copy-Item -LiteralPath (Join-Path $Payload $name) -Destination (Join-Path $destination $name) }
+        Copy-Item -LiteralPath $uninstaller -Destination (Join-Path $destination 'Uninstall.exe')
         Assert-Manifest $manifest $destination -Installed
     }
     $pending = [pscustomobject]@{ schema = 1; candidate = $manifest; previous = $previous; enrollment = $enrollment }
     Write-AtomicJson 'pending.json' $pending
+    if (Test-Path -LiteralPath (Join-Path $script:Root 'staging.json')) { Remove-Item -LiteralPath (Join-Path $script:Root 'staging.json') }
     try {
         if ($previous) { Set-MaintenanceGate; Stop-InstalledService @($old) }
         # This executable reads only the fixed protected store and rejects unknown formats.
@@ -427,6 +469,8 @@ function Invoke-Quad9Lifecycle([string] $Operation, [string] $Payload, [string] 
         $pending = Read-InstallJson 'pending.json'
         if ($pending) { Restore-PendingInstallation $pending }
         $state = Read-InstallJson 'installation.json'
+        $staging = Read-InstallJson 'staging.json'
+        if ($staging) { Resolve-StagedCandidate $staging $state }
         if ($Operation -eq 'Install' -and $state -and -not $state.installed) {
             Complete-Quad9Removal $state
             $state = $null

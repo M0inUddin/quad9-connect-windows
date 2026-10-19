@@ -12,6 +12,8 @@ Run a newer installer to upgrade. Choose **Keep existing access**. Upgrades reta
 
 Each payload lives in `%ProgramFiles%\Quad9Connect\versions\<SHA-256 build identifier>`. The previous payload remains available until removal. A failed replacement restores the previous service registration and starts that service without restoring or re-enabling committed DNS. The current v0.1 storage format is unchanged during upgrades. Unknown storage formats and pending recovery fail preflight instead of attempting a speculative migration. Future storage migrations require their own rollback design.
 
+Setup records staging ownership before creating or copying a candidate directory. An interrupted copy is retained under the protected `retained-staging` directory on retry, without executing it or changing the registered service. Replacement recovery authenticates the previous recovery executable; missing or quarantined candidate UI files do not prevent rollback.
+
 For silent installation, specify an enabled local user SID explicitly:
 
 ```powershell

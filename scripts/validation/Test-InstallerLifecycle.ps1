@@ -43,6 +43,8 @@ try {
         if (@($fresh.versions).Count -ne 1 -or $null -eq $fresh.versions[0]) { throw 'Fresh inventory contains a null payload.' }
         $repeat = New-InstallationState $manifest $fresh $null
         if (@($repeat.versions).Count -ne 1) { throw 'Repeated installation duplicated the payload.' }
+        [IO.File]::WriteAllText((Join-Path $Fixture 'Uninstall.exe'), 'uninstaller')
+        $manifest.files = @($manifest.files) + [pscustomobject]@{ name = 'Uninstall.exe'; sha256 = (Get-FileHash -LiteralPath (Join-Path $Fixture 'Uninstall.exe')).Hash }
 
         # The offline restore must succeed before SCM deletion or payload removal.
         $script:Events = [Collections.Generic.List[string]]::new()
@@ -100,11 +102,26 @@ try {
         }
         Add-Enrollment ([pscustomobject]@{ sid = 'S-1-5-21-1-2-3-1001' })
         if ($script:EnrollmentAdds -ne 1) { throw 'Explicit operator enrollment was not applied.' }
+        function Assert-ServiceIdentity { return $null }
+        function New-ProtectedDirectory([string] $Path) { [IO.Directory]::CreateDirectory($Path) | Out-Null }
+        $partial = $manifest | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+        $partial.id = 'c' * 64
+        [IO.Directory]::CreateDirectory((Join-Path $Fixture 'versions')) | Out-Null
+        Write-AtomicJson 'staging.json' ([pscustomobject]@{ schema = 1; candidate = $partial })
+        $partialPath = Get-VersionPath $partial
+        [IO.Directory]::CreateDirectory($partialPath) | Out-Null
+        [IO.File]::WriteAllText((Join-Path $partialPath 'quad9-service.exe'), 'interrupted copy')
+        Resolve-StagedCandidate (Read-InstallJson 'staging.json') $null
+        $retained = @(Get-ChildItem -LiteralPath (Join-Path $Fixture 'retained-staging') -Directory)
+        if ((Test-Path -LiteralPath $partialPath) -or $retained.Count -ne 1 -or
+            [IO.File]::ReadAllText((Join-Path $retained[0].FullName 'quad9-service.exe')) -cne 'interrupted copy') { throw 'Partial staging was not retained safely for a retry.' }
     } $fixture
     Write-Output 'Installer contract tests passed: payload integrity, unsafe paths, unsupported storage, blocked uninstall, and upgrade rollback.'
 } finally {
-    # Remove only known flat fixtures from this unique test-owned directory.
-    foreach ($file in Get-ChildItem -LiteralPath $fixture -File -Force) { Remove-Item -LiteralPath $file.FullName }
-    [IO.Directory]::Delete($fixture, $false)
+    $resolved = (Resolve-Path -LiteralPath $fixture).Path
+    if ($resolved -ine [IO.Path]::GetFullPath($fixture) -or
+        (Split-Path $resolved -Parent) -ine ([IO.Path]::GetTempPath().TrimEnd('\')) -or
+        (Split-Path $resolved -Leaf) -notmatch '^quad9-installer-test-[a-f0-9]{32}$') { throw 'Unsafe fixture cleanup scope.' }
+    Remove-Item -LiteralPath $resolved -Recurse -Force
     Remove-Module $module
 }

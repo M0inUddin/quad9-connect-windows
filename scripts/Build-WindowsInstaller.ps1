@@ -23,7 +23,8 @@ Copy-Item -LiteralPath $DesktopBinary -Destination (Join-Path $payload 'quad9-de
 foreach ($name in @('InstallerLifecycle.psm1', 'Manage-Quad9Installation.ps1')) { Copy-Item -LiteralPath (Join-Path $source $name) -Destination (Join-Path $payload $name) }
 Copy-Item -LiteralPath (Join-Path $repo 'LICENSE') -Destination (Join-Path $payload 'LICENSE.txt')
 $files = @(Get-ChildItem -LiteralPath $payload -File | Sort-Object Name | ForEach-Object { [ordered]@{ name = $_.Name; sha256 = (Get-FileHash -LiteralPath $_.FullName).Hash } })
-$identity = [Text.Encoding]::UTF8.GetBytes(($files | ConvertTo-Json -Compress) + $version)
+$installerSources = @(foreach ($name in @('Quad9Connect.nsi', 'List-Operators.ps1')) { (Get-FileHash -LiteralPath (Join-Path $source $name)).Hash })
+$identity = [Text.Encoding]::UTF8.GetBytes(($files | ConvertTo-Json -Compress) + $version + ($installerSources -join ''))
 $sha = [Security.Cryptography.SHA256]::Create()
 try { $id = -join ($sha.ComputeHash($identity) | ForEach-Object { $_.ToString('x2') }) } finally { $sha.Dispose() }
 $manifest = [ordered]@{ schema = 1; protocol = 1; storage = 1; id = $id; version = $version; files = $files }
