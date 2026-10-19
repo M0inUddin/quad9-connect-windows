@@ -23,7 +23,7 @@ import type {
 type View = "connection" | "diagnostics" | "settings";
 type MonitorFailure = { generation: number; message: string };
 type TrayResult = { Ok: Response } | { Err: string };
-type InterfaceContext = { view: View; diagnostic_pending: boolean; tray_result: TrayResult | null };
+type InterfaceContext = { view: View; document_id: number; diagnostic_pending: boolean; tray_result: TrayResult | null };
 const copy = {
   off: [
     "Ready when you are",
@@ -103,6 +103,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   const initializing = useRef(true);
   const diagnosticQueued = useRef(false);
   const retentionSequence = useRef(0);
+  const documentId = useRef<number | null>(null);
   const retry = useRef<Request | null>(null);
   const observationEpoch = useRef(0);
   const nativeGeneration = useRef(0);
@@ -160,8 +161,9 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
     let alive = true;
     (async () => {
       if (isTauri()) {
-        const context = await invoke<InterfaceContext>("interface_context");
+        const context = await invoke<InterfaceContext>("interface_context", { newDocument: true });
         if (context) {
+          documentId.current = context.document_id;
           setView(context.view);
           if (context.tray_result) acceptTrayResult(context.tray_result);
           if (context.diagnostic_pending) diagnosticQueued.current = true;
@@ -334,6 +336,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         await invoke("retain_interface", {
           retain: true,
           sequence: ++retentionSequence.current,
+          documentId: documentId.current,
         });
       if (request) {
         const mutation =
@@ -392,6 +395,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
           void invoke("retain_interface", {
             retain: false,
             sequence: ++retentionSequence.current,
+            documentId: documentId.current,
           }).catch(() => {});
       }
     }

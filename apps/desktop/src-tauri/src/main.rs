@@ -26,6 +26,7 @@ struct Host {
     monitor_error: Arc<Mutex<Option<MonitorFailure>>>,
     retention: Arc<AtomicU8>,
     retention_sequence: Arc<AtomicU64>,
+    document_id: Arc<AtomicU64>,
     visibility_request: Arc<AtomicU64>,
     diagnostic_pending: Arc<AtomicBool>,
     window_transition: Arc<Mutex<()>>,
@@ -237,13 +238,23 @@ async fn observed_service_request(
 #[derive(serde::Serialize)]
 struct InterfaceContext {
     view: String,
+    document_id: u64,
     diagnostic_pending: bool,
     tray_result: Option<Result<Response, String>>,
 }
 
 #[tauri::command]
-fn interface_context(app: tauri::AppHandle, window: tauri::Window) -> InterfaceContext {
+fn interface_context(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    new_document: Option<bool>,
+) -> InterfaceContext {
     let host = app.state::<Host>();
+    if new_document == Some(true) && is_current_window(&app, &window) {
+        host.document_id.fetch_add(1, Ordering::AcqRel);
+        host.retention_sequence.store(0, Ordering::Release);
+    }
+    let document_id = host.document_id.load(Ordering::Acquire);
     let view = host.next_view.lock().unwrap().clone();
     let tray_result = host.tray_result.lock().unwrap().take();
     // A startup status read may still be pending when the user closes. Keep
@@ -252,6 +263,7 @@ fn interface_context(app: tauri::AppHandle, window: tauri::Window) -> InterfaceC
         && reserve_pending_diagnostic(&host.diagnostic_pending, &host.retention);
     InterfaceContext {
         view,
+        document_id,
         diagnostic_pending,
         tray_result,
     }
@@ -278,6 +290,7 @@ fn retain_interface(
     window: tauri::Window,
     retain: bool,
     sequence: Option<u64>,
+    document_id: Option<u64>,
 ) -> Result<(), String> {
     // Synchronous IPC records retention before a later CloseRequested can
     // dispatch a worker. Destruction atomically claims IDLE, so an accepted
@@ -285,6 +298,9 @@ fn retain_interface(
     let host = app.state::<Host>();
     if !is_current_window(&app, &window) {
         return Err("The requesting interface has already closed".into());
+    }
+    if document_id.is_some_and(|id| id != host.document_id.load(Ordering::Acquire)) {
+        return Err("The requesting document has already been replaced".into());
     }
     if let Some(sequence) = sequence {
         if sequence <= host.retention_sequence.load(Ordering::Acquire) {
@@ -471,6 +487,7 @@ fn main() {
                 monitor_error: Arc::new(Mutex::new(None)),
                 retention: Arc::new(AtomicU8::new(IDLE)),
                 retention_sequence: Arc::new(AtomicU64::new(0)),
+                document_id: Arc::new(AtomicU64::new(0)),
                 visibility_request: Arc::new(AtomicU64::new(0)),
                 diagnostic_pending: Arc::new(AtomicBool::new(false)),
                 window_transition: Arc::new(Mutex::new(())),

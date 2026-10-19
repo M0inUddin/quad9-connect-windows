@@ -164,6 +164,35 @@ try {
         fullPage: true,
       });
 
+      // Reloading preserves the native window but creates a new document. Its
+      // first retention sequence must work, and the old document cannot release it.
+      const oldDocument = await page.evaluate(async () => {
+        const context = await window.__TAURI_INTERNALS__.invoke("interface_context");
+        await window.__TAURI_INTERNALS__.invoke("retain_interface", {
+          retain: false, sequence: 1000, documentId: context.document_id,
+        });
+        return context.document_id;
+      });
+      await page.reload();
+      await expect(page.getByRole("status")).toHaveText(/Service unavailable|Ready when you are/);
+      const currentDocument = await page.evaluate(async () => {
+        const context = await window.__TAURI_INTERNALS__.invoke("interface_context");
+        await window.__TAURI_INTERNALS__.invoke("retain_interface", {
+          retain: true, sequence: 1, documentId: context.document_id,
+        });
+        return context.document_id;
+      });
+      expect(currentDocument).not.toBe(oldDocument);
+      const staleAccepted = await page.evaluate(async (documentId) => {
+        try {
+          await window.__TAURI_INTERNALS__.invoke("retain_interface", {
+            retain: false, sequence: 1001, documentId,
+          });
+          return true;
+        } catch { return false; }
+      }, oldDocument);
+      expect(staleAccepted).toBe(false);
+      report.document_reload_retention = true;
       // Busy/uncertain windows must keep their frontend receipt state on close.
       await page.evaluate(() =>
         window.__TAURI_INTERNALS__.invoke("retain_interface", { retain: true }),
