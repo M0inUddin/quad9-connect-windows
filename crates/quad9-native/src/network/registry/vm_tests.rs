@@ -5,7 +5,7 @@ use super::{
     *,
 };
 use crate::{inspect_adapters, AdapterKind, WindowsDnsBackend};
-use quad9_core::{AddressFamily, DnsBackend, DnsSettings, Target};
+use quad9_core::{AddressFamily, DnsBackend, DnsSettings, ServerAssignment, Target};
 use std::{
     panic::{catch_unwind, AssertUnwindSafe},
     sync::atomic::Ordering,
@@ -128,6 +128,18 @@ fn vm_doh_property_changes_notify_from_dns_client_settings() {
 }
 
 fn write_doh_only(target: &Target, settings: &DnsSettings) {
+    let ServerAssignment::Static { servers } = &settings.assignment else {
+        panic!("The DoH-only VM test requires the fixed static profile");
+    };
+    // The API requires this string to bind property indexes, including when
+    // DNS_SETTING_NAMESERVER is absent and address assignment is not selected.
+    let mut names = wide(
+        &servers
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(","),
+    );
     let templates: Vec<_> = settings
         .doh
         .iter()
@@ -167,13 +179,14 @@ fn write_doh_only(target: &Target, settings: &DnsSettings) {
             },
         cServerProperties: properties.len() as u32,
         ServerProperties: properties.as_mut_ptr(),
+        NameServer: names.as_mut_ptr(),
         ..Default::default()
     };
     let guid = GUID::from_u128(
         u128::from_str_radix(&target.adapter_id.as_str().replace('-', ""), 16).unwrap(),
     );
     // SAFETY: The validated target and all DoH buffers remain live through this
-    // synchronous VM-only call. No NameServer pointer or address flag is passed.
+    // synchronous VM-only call. The address assignment flag is not selected.
     let code =
         unsafe { SetInterfaceDnsSettings(guid, (&raw as *const DNS_INTERFACE_SETTINGS3).cast()) };
     assert_eq!(code, 0, "DoH-only native write failed");
