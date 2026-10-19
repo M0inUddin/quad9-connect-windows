@@ -43,7 +43,7 @@ const summary = {
     ? ["window"]
     : ["window", "retained-hidden", "tray"],
   method:
-    "Isolated app profile; recursive process attribution; debugging listener enabled for native close control, with no CDP client connected during counter sampling. No axe or screen reader is active. Windows settings are unchanged.",
+    "Isolated app profile; recursive process attribution; debugging listener enabled for native close control, with no CDP client connected during counter sampling. Visible-window sampling holds a scoped display/system power request, released on completion or failure. No axe or screen reader is active. Windows settings are unchanged.",
 };
 const jobName = `Local\\Quad9Resources-${randomUUID()}`;
 const launcher = spawn(
@@ -132,7 +132,7 @@ async function sample(
     file,
   ];
   if (desktopOnly) args.push("-DesktopOnly");
-  if (phase === "window") args.push("-RequireForeground");
+  if (phase === "window") args.push("-RequireForeground", "-KeepDisplayAvailable");
   if (smoke) args.push("-DurationSeconds", "2", "-SettleSeconds", "0");
   const result = await execute(shell, args, {
     windowsHide: true,
@@ -141,6 +141,7 @@ async function sample(
   console.log(result.stdout.trim());
   const report = JSON.parse(await readFile(file, "utf8"));
   expect(report.complete_process_set).toBe(!desktopOnly);
+  expect(report.sampler_display_awake_requested).toBe(phase === "window");
   if (desktopOnly) expect(report.cpu_measurement_complete).toBe(true);
   expect(report.desktop_job_processes_at_start).toBeGreaterThan(0);
   expect(report.desktop_job_processes_at_end).toBeGreaterThanOrEqual(

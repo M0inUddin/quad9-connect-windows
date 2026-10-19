@@ -65,10 +65,14 @@ jobs:
       - name: Validate native resource counters under Windows PowerShell and PowerShell 7
         working-directory: apps/desktop
         run: node scripts/native-resources.mjs src-tauri/target/debug/quad9-desktop.exe ../../output/playwright/native-resources --desktop-only --counter-smoke --verify-pwsh --service-unavailable
-      - name: Verify CPU accounting survives processes exiting between samples
+      - name: Verify exited-process CPU accounting and scoped benchmark power requests
         run: |
-          powershell.exe -NoProfile -File scripts/validation/Test-ResourceJob.ps1
-          pwsh.exe -NoProfile -File scripts/validation/Test-ResourceJob.ps1
+          foreach ($validationShell in @('powershell.exe', 'pwsh.exe')) {
+            & $validationShell -NoProfile -File scripts/validation/Test-ResourceJob.ps1
+            if ($LASTEXITCODE -ne 0) { throw "CPU accounting regression failed under $validationShell" }
+            & $validationShell -NoProfile -File scripts/validation/Test-ResourcePower.ps1
+            if ($LASTEXITCODE -ne 0) { throw "Power request regression failed under $validationShell" }
+          }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: quad9-desktop-windows-development

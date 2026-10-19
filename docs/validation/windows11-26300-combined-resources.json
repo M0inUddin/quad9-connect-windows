@@ -1,0 +1,147 @@
+{
+  "schema": 1,
+  "date_utc": "2026-10-19",
+  "build": {
+    "type": "Unsigned release MSVC, x86_64-pc-windows-msvc",
+    "installer_sha256": "7687c26f76f25295ff6bb2f4706a01cf682b4bd9af3838165e2b0b389347c520",
+    "desktop_sha256": "ec4a990cfa6ff8790b478517ae85f9c811736bd5bd65a5883d216a5fdb2975a4",
+    "service_sha256": "fa0f6987ac4b9085d146fc05a3ef990ac6903bda1abc9edb582fdb7966047939",
+    "clean_source_commit": "3d397586f9f670ced5d7bce27397cdbc8500a0b2",
+    "source_tree": "ebb38f04401c0ec00036f8235268ada7b4ece5ff",
+    "source_dirty": false,
+    "artifact_run": "https://github.com/M0inUddin/quad9-connect-windows/actions/runs/39303405880",
+    "scope": "PR14 candidate, including startup logging; before the subsequent direct-upstream feature."
+  },
+  "host": {
+    "windows_version": "10.0.26300",
+    "processor": "13th Gen Intel Core i7-1370P",
+    "logical_processors": 20,
+    "installed_ram_gib": 32,
+    "webview2_version": "155.0.4283.62",
+    "reference_machine": false
+  },
+  "authorization": {
+    "account": "Temporary local standard account enrolled by the real installer; fresh CreateProcessWithLogonW token on the existing desktop.",
+    "native_connection_state": "Ready when you are",
+    "management": "Off, no active journal or recovery block",
+    "account_disabled_after_launch": true,
+    "credentials": "Password generated in memory, not serialized by the harness."
+  },
+  "method": {
+    "cpu": "Cumulative Windows job kernel/user time, including exited desktop descendants, plus simultaneous LocalSystem service counters; normalized to one logical CPU.",
+    "working_set": "Sum of process working sets, counting shared resident pages in every mapping.",
+    "bootstrap": "A temporary PowerShell bootstrap starts the standard-user UI inside the job and exits before settling; its earlier CPU is excluded by the measurement baseline.",
+    "foreground": "Native foreground PID sampled with counters; every sample must match the desktop. No claim about unsampled transitions.",
+    "observation": "CDP listener only during counter intervals; client disconnected. No axe, screen reader, verbose browser trace, compilation, or browser regression suite during measured intervals.",
+    "power": "Three-minute display-off timeout observed read-only. An external, bounded SetThreadExecutionState display/system request was used for retries after the first gated interval; it does not change policy or force focus.",
+    "sampler_base": "6354daadebdf31c260d539e89da01e24ec396970",
+    "sampler_local_changes": "Scoped display/system lease and its report field added for future foreground retries; CPU and working-set accounting unchanged. Completed intervals predate that sampler lease.",
+    "privacy": "Raw DNS snapshots, paths, account/SIDs, profiles, process IDs and recovery records are excluded from this record."
+  },
+  "window_attempts": [
+    {
+      "id": "initial_combined_window",
+      "method": "Fresh secondary-logon account/profile, without a benchmark power request.",
+      "sampler_display_awake_requested": false,
+      "settle_seconds": 30,
+      "measured_seconds": 301.25705889999995,
+      "cpu_percent_one_logical_core": 4.745739420083014,
+      "cpu_measurement_complete": true,
+      "maximum_working_set_mib": 415.03125,
+      "average_working_set_mib": 222.4109594042056,
+      "maximum_service_working_set_mib": 10.62890625,
+      "complete_process_set": true,
+      "process_exits_observed": true,
+      "job_processes_at_start": 9,
+      "job_processes_at_end": 19,
+      "samples": 107,
+      "foreground_samples": 50,
+      "foreground_throughout": false,
+      "foreground_required": true,
+      "minimum_webviews": 6,
+      "maximum_webviews": 7,
+      "combined_cpu_target_pass": null,
+      "combined_memory_target_pass": null,
+      "service_memory_target_pass": null
+    },
+    {
+      "id": "gated_retry_1",
+      "method": "New secondary-logon account/profile; held open while local checks finished, then user foreground confirmation.",
+      "sampler_display_awake_requested": false,
+      "settle_seconds": 30,
+      "measured_seconds": 302.1791056,
+      "cpu_percent_one_logical_core": 0.5791267389336002,
+      "cpu_measurement_complete": true,
+      "maximum_working_set_mib": 220.296875,
+      "average_working_set_mib": 195.9066954495614,
+      "maximum_service_working_set_mib": 10.3046875,
+      "complete_process_set": true,
+      "process_exits_observed": false,
+      "job_processes_at_start": 19,
+      "job_processes_at_end": 19,
+      "samples": 114,
+      "foreground_samples": 108,
+      "foreground_throughout": false,
+      "foreground_required": true,
+      "minimum_webviews": 6,
+      "maximum_webviews": 6,
+      "combined_cpu_target_pass": null,
+      "combined_memory_target_pass": null,
+      "service_memory_target_pass": null
+    }
+  ],
+  "qualified_window_attempt": null,
+  "tray": {
+    "sampler_display_awake_requested": false,
+    "settle_seconds": 30,
+    "measured_seconds": 300.90863729999995,
+    "cpu_percent_one_logical_core": 0.04154084811974921,
+    "cpu_measurement_complete": true,
+    "maximum_working_set_mib": 42.203125,
+    "average_working_set_mib": 42.09871847587719,
+    "maximum_service_working_set_mib": 10.43359375,
+    "complete_process_set": true,
+    "process_exits_observed": false,
+    "job_processes_at_start": 19,
+    "job_processes_at_end": 19,
+    "samples": 114,
+    "foreground_samples": 0,
+    "foreground_throughout": false,
+    "foreground_required": false,
+    "minimum_webviews": 0,
+    "maximum_webviews": 0,
+    "combined_cpu_target_pass": true,
+    "combined_memory_target_pass": true,
+    "service_memory_target_pass": true
+  },
+  "startup_logging": {
+    "events": [
+      "controller_starting",
+      "controller_started"
+    ],
+    "scope": "Fresh physical LocalSystem startup recorded fixed events. Failure/retention scenarios remain separately covered by unit and disposable-VM tests."
+  },
+  "cleanup": {
+    "initial_combined_run": {
+      "complete": true,
+      "native_dns_baseline_unchanged": true,
+      "service_removed": true,
+      "operator_group_removed": true
+    },
+    "foreground_retry": {
+      "complete": true,
+      "native_dns_baseline_unchanged": true,
+      "service_removed": true,
+      "operator_group_removed": true
+    },
+    "temporary_power_request_released": true
+  },
+  "scope": [
+    "Both applications were measured simultaneously; separately measured numbers were not added.",
+    "All completed window attempts are retained, including intervals that lost foreground.",
+    "Profiles and foreground conditions differ; these are not a controlled optimization comparison.",
+    "This larger development host does not qualify the specification reference machine or the full Windows 11 compatibility matrix.",
+    "Startup, signing, manual assistive technology, native tray-menu and remaining network/installer acceptance work are separate."
+  ],
+  "result": "Simultaneous tray budgets passed; a full foreground interval remains unqualified."
+}
