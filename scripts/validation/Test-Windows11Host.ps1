@@ -105,7 +105,10 @@ if ($Recover) {
     Assert-ProtectedRunDirectory
     . (Join-Path $runRoot 'NativeDnsApi.ps1')
     . (Join-Path $runRoot 'HostValidationHelpers.ps1')
-    if (Test-Path -LiteralPath (Join-Path $runRoot 'completed')) { return }
+    if (Test-Path -LiteralPath (Join-Path $runRoot 'completed')) {
+        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+        return
+    }
     $plan = Get-Content -LiteralPath (Join-Path $runRoot 'plan.json') -Raw | ConvertFrom-Json
     $owner = Get-Process -Id $plan.owner_pid -ErrorAction SilentlyContinue
     if (Test-HostValidationOwner $plan $owner) {

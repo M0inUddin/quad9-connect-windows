@@ -1,5 +1,8 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$tokens = $null; $parseErrors = $null
+[System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'Test-Windows11Host.ps1'), [ref]$tokens, [ref]$parseErrors) | Out-Null
+if ($parseErrors.Count -ne 0) { throw ($parseErrors | Out-String) }
 . (Join-Path $PSScriptRoot 'HostValidationHelpers.ps1')
 
 $original = [pscustomobject]@{ Code = 0; NameServer = ''; ProfileNameServer = $null; ProfileCount = 0; Properties = @() }

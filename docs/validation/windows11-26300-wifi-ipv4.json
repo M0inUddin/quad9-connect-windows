@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-19",
+  "operating_system": "Microsoft Windows 11 Pro",
+  "build": "26300",
+  "service_build": "0.1.0-dev, debug, x86_64-pc-windows-gnu",
+  "service_binary_sha256": "B40173AB2027C0B45BEC4AE55D6D97F72F842D0DE19A41122F0C1178438018B8",
+  "runner_commit": "2635a9d911cd0fd4a428df7b0a0631f688c4daf2",
+  "service_source_commit": "356bf63866348fb701735b1aefe74c35fabb7d87",
+  "scope": "One physical Wi-Fi IPv4 adapter, original automatic DNS assignment, production scope checks",
+  "result": "passed",
+  "native_roundtrip": "passed",
+  "service_roundtrip": "passed",
+  "restart_persistence": "passed",
+  "historical_retry": "passed",
+  "original_baseline_restored": true,
+  "temporary_service_removed": true,
+  "new_operator_enrollment_removed": true,
+  "recovery_task_removed": true,
+  "recovery_records": "Retained locally in a protected archive; no adapter identifiers, addresses, account identifiers, or raw journals are committed",
+  "untested_on_this_host": [
+    "IPv6, disabled on the selected Wi-Fi adapter",
+    "Static DNS baseline variants",
+    "Fresh standard-user token authorization",
+    "Forced watchdog termination or Windows power loss",
+    "Signed release binaries and distribution installer"
+  ]
+}
