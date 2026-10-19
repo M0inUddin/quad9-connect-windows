@@ -25,6 +25,8 @@ Silent upgrades preserve existing authorization and omit `/OPERATORSID`. For set
 
 ## Safe uninstall and repair
 
+Choose **Quit interface** from the tray menu before upgrading or removing the app. Setup checks for an open installed interface before changing service state or removing retry commands. Closing the window alone keeps the tray process running.
+
 Use Windows Installed apps, or run the registered `Uninstall.exe`. Uninstall stops the service and takes the same exclusive recovery-store lock used by the service. The installed service executable then performs ownership-aware restoration offline. This prevents a client from enabling DNS between restoration and service removal.
 
 For unattended removal, run the registered `QuietUninstallString` **as an administrator or SYSTEM**. It invokes the installed PowerShell lifecycle command synchronously and returns nonzero when recovery blocks removal. The interactive NSIS uninstaller copies itself to a child process; its bootstrap exit code alone is not a completion result. Automation should use `QuietUninstallString`, or invoke `Manage-Quad9Installation.ps1 -Operation Uninstall` from an elevated session.

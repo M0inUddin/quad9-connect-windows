@@ -330,6 +330,15 @@ function New-InstallationState([object] $Manifest, [object] $State, [object] $En
     return [pscustomobject]@{ schema = 1; installed = $true; current = $Manifest.id; versions = @($versions) + $Manifest; enrollment = $Enrollment }
 }
 
+function Assert-InterfaceClosed([object] $State) {
+    $paths = @($State.versions | ForEach-Object { Join-Path (Get-VersionPath $_) 'quad9-desktop.exe' })
+    foreach ($process in Get-CimInstance Win32_Process -Filter "Name='quad9-desktop.exe'") {
+        if (-not $process.ExecutablePath -or $process.ExecutablePath -iin $paths) {
+            throw 'Quit Quad9 Connect from its tray menu, then retry setup. The service and DNS settings have been preserved.'
+        }
+    }
+}
+
 function Install-Quad9Payload([string] $Payload, [string] $OperatorSid, [object] $State) {
     Test-WebView2
     $manifestPath = Join-Path $Payload 'payload.json'
@@ -338,6 +347,7 @@ function Install-Quad9Payload([string] $Payload, [string] $OperatorSid, [object]
     Assert-Manifest $manifest $Payload
     $previous = if ($State -and $State.installed) { $State } else { $null }
     if ($previous) {
+        Assert-InterfaceClosed $previous
         $old = Get-CurrentManifest $previous
         if ([version]($manifest.version.Split('-')[0]) -lt [version]($old.version.Split('-')[0])) { throw 'Downgrades require the matching recovery procedure.' }
         $null = Assert-ServiceIdentity @($old)
@@ -396,6 +406,7 @@ function Uninstall-Quad9Payload([object] $State) {
     # Only the current, authenticated recovery executable is required to restore.
     # Damaged obsolete versions must not prevent restoration of active DNS.
     $manifest = Get-CurrentManifest $State -RecoveryOnly
+    Assert-InterfaceClosed $State
     $identity = Assert-ServiceIdentity @($manifest)
     Set-MaintenanceGate
     try {

@@ -50,6 +50,7 @@ try {
         $script:Events = [Collections.Generic.List[string]]::new()
         $script:FixtureManifest = $manifest
         function Get-CurrentManifest { return $script:FixtureManifest }
+        function Get-CimInstance { return @() }
         function Assert-ProtectedDirectory {}
         function Assert-Manifest {}
         function Assert-ServiceIdentity { return [pscustomobject]@{ PathName = 'known service' } }
@@ -102,6 +103,9 @@ try {
         }
         Add-Enrollment ([pscustomobject]@{ sid = 'S-1-5-21-1-2-3-1001' })
         if ($script:EnrollmentAdds -ne 1) { throw 'Explicit operator enrollment was not applied.' }
+        function Get-CimInstance { return [pscustomobject]@{ ExecutablePath = $null } }
+        Must-Fail { Assert-InterfaceClosed $state }
+        function Get-CimInstance { return @() }
         function Assert-ServiceIdentity { return $null }
         function New-ProtectedDirectory([string] $Path) { [IO.Directory]::CreateDirectory($Path) | Out-Null }
         $partial = $manifest | ConvertTo-Json -Depth 10 | ConvertFrom-Json

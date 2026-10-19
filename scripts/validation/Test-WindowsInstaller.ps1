@@ -99,6 +99,18 @@ try {
     $status = Request @{ type = 'get_status' }
     if ($status.result.revision -ne 0 -or $null -ne $status.result.journal) { throw 'Fresh installation enabled DNS.' }
     Assert-Baseline
+    # Refuse removal before deleting retry commands when the tray UI is open.
+    $interface = Start-Process -FilePath (Join-Path (Current-Directory) 'quad9-desktop.exe') -WindowStyle Hidden -PassThru
+    try {
+        Start-Sleep -Seconds 2
+        if ($interface.HasExited) { throw 'The interface fixture exited unexpectedly.' }
+        & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path (Current-Directory) 'Manage-Quad9Installation.ps1') -Operation Uninstall
+        if ($LASTEXITCODE -ne 1 -or -not (State).installed -or -not (Test-Path (Join-Path (Current-Directory) 'Manage-Quad9Installation.ps1'))) { throw 'An open interface caused partial quiet removal.' }
+        Assert-Baseline
+    } finally {
+        if (-not $interface.HasExited) { Stop-Process -Id $interface.Id -Force; $interface.WaitForExit() }
+        $interface.Dispose()
+    }
     # A new standard-user token sees the explicit enrollment and cannot write
     # installed binaries, recovery state, or invoke offline administrator recovery.
     $client = Join-Path $output 'client.ps1'
@@ -207,7 +219,7 @@ try {
     Assert-Baseline
     Run-Setup (Join-Path (Current-Directory) 'Uninstall.exe') '/S'
     Assert-Baseline
-    [ordered]@{ result = 'passed'; first_install_dns_unchanged = $true; standard_user_authorization = $true; maintenance_gate = $true; partial_staging_recovered = $true; active_upgrade = $true; failed_upgrade_rollback = $true; interrupted_upgrade = $true; missing_candidate_ui_recovered = $true; conflict_blocks_uninstall = $true; quiet_uninstall_exit_code = $true; administrator_repair = $true; uninstall_restores_dns = $true; reinstall = $true; os_build = [Environment]::OSVersion.Version.Build } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'installer-validation.json')
+    [ordered]@{ result = 'passed'; first_install_dns_unchanged = $true; open_interface_preserved = $true; standard_user_authorization = $true; maintenance_gate = $true; partial_staging_recovered = $true; active_upgrade = $true; failed_upgrade_rollback = $true; interrupted_upgrade = $true; missing_candidate_ui_recovered = $true; conflict_blocks_uninstall = $true; quiet_uninstall_exit_code = $true; administrator_repair = $true; uninstall_restores_dns = $true; reinstall = $true; os_build = [Environment]::OSVersion.Version.Build } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'installer-validation.json')
     Write-Output 'Real NSIS installer lifecycle passed on this disposable VM.'
 } finally {
     $service = Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue
