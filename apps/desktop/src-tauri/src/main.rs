@@ -26,6 +26,8 @@ struct Host {
     monitor_error: Arc<Mutex<Option<MonitorFailure>>>,
     retain_window: Arc<AtomicBool>,
     retention_sequence: Arc<AtomicU64>,
+    visibility_request: Arc<AtomicU64>,
+    diagnostic_pending: Arc<AtomicBool>,
     window_transition: Arc<Mutex<()>>,
     destroyed: Arc<(Mutex<u64>, Condvar)>,
     next_view: Arc<Mutex<String>>,
@@ -195,6 +197,7 @@ async fn observed_service_request(
 #[derive(serde::Serialize)]
 struct InterfaceContext {
     view: String,
+    diagnostic_pending: bool,
     tray_result: Option<Result<Response, String>>,
 }
 
@@ -203,7 +206,12 @@ fn interface_context(app: tauri::AppHandle) -> InterfaceContext {
     let host = app.state::<Host>();
     let view = host.next_view.lock().unwrap().clone();
     let tray_result = host.tray_result.lock().unwrap().take();
-    InterfaceContext { view, tray_result }
+    let diagnostic_pending = host.diagnostic_pending.swap(false, Ordering::AcqRel);
+    InterfaceContext {
+        view,
+        diagnostic_pending,
+        tray_result,
+    }
 }
 
 #[tauri::command]
@@ -268,11 +276,18 @@ fn destroy_window(app: &tauri::AppHandle, window: &tauri::Window) -> Result<(), 
 
 fn hide_interface(window: tauri::Window) {
     let app = window.app_handle().clone();
+    let request = app
+        .state::<Host>()
+        .visibility_request
+        .fetch_add(1, Ordering::AcqRel)
+        + 1;
     std::thread::spawn(move || {
         let result = (|| -> Result<(), String> {
             let host = app.state::<Host>();
             let _transition = host.window_transition.lock().map_err(|e| e.to_string())?;
-            if !is_current_window(&app, &window) {
+            if request != host.visibility_request.load(Ordering::Acquire)
+                || !is_current_window(&app, &window)
+            {
                 return Ok(());
             }
             window.hide().map_err(|e| e.to_string())?;
@@ -290,12 +305,19 @@ fn hide_interface(window: tauri::Window) {
 fn show(app: &tauri::AppHandle, view: &str) {
     let host = app.state::<Host>();
     *host.next_view.lock().unwrap() = view.to_owned();
+    if view == "diagnostics" {
+        host.diagnostic_pending.store(true, Ordering::Release);
+    }
+    let request = host.visibility_request.fetch_add(1, Ordering::AcqRel) + 1;
     let app = app.clone();
     // WebView2 window creation must not block the Windows event thread.
     std::thread::spawn(move || {
         let result = (|| -> Result<(), String> {
             let host = app.state::<Host>();
             let _transition = host.window_transition.lock().map_err(|e| e.to_string())?;
+            if request != host.visibility_request.load(Ordering::Acquire) {
+                return Ok(());
+            }
             show_window(&app).map_err(|e| e.to_string())
         })();
         if let Err(error) = result {
@@ -368,6 +390,8 @@ fn main() {
                 monitor_error: Arc::new(Mutex::new(None)),
                 retain_window: Arc::new(AtomicBool::new(false)),
                 retention_sequence: Arc::new(AtomicU64::new(0)),
+                visibility_request: Arc::new(AtomicU64::new(0)),
+                diagnostic_pending: Arc::new(AtomicBool::new(false)),
                 window_transition: Arc::new(Mutex::new(())),
                 destroyed: Arc::new((Mutex::new(0), Condvar::new())),
                 next_view: Arc::new(Mutex::new("connection".into())),

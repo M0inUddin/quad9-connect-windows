@@ -216,6 +216,21 @@ try {
         single_instance_reopen: true,
         preferences_preserved: true,
       };
+      // A later Open must win even if the close worker has not run yet.
+      for (let cycle = 0; cycle < 6; cycle++) {
+        await page.evaluate(() =>
+          window.__TAURI_INTERNALS__.invoke("retain_interface", { retain: true }),
+        );
+        await page.keyboard.press("Control+w");
+        const previous = browser;
+        ({ browser, page } = await reopen(executable, port, child));
+        await previous.close().catch(() => {});
+        await page.waitForFunction(() => !document.hidden);
+        await delay(150);
+        expect(page.isClosed()).toBe(false);
+        expect(await page.evaluate(() => document.hidden)).toBe(false);
+      }
+      report.lifecycle.immediate_close_reopen_cycles = 6;
       // Release a retained hidden document concurrently with a second launch.
       // Either the old document is shown or a replacement is built; the latest
       // Open action must leave a live, visible window in both orderings.

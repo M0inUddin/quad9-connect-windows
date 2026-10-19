@@ -23,7 +23,7 @@ import type {
 type View = "connection" | "diagnostics" | "settings";
 type MonitorFailure = { generation: number; message: string };
 type TrayResult = { Ok: Response } | { Err: string };
-type InterfaceContext = { view: View; tray_result: TrayResult | null };
+type InterfaceContext = { view: View; diagnostic_pending: boolean; tray_result: TrayResult | null };
 const copy = {
   off: [
     "Ready when you are",
@@ -164,7 +164,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         if (context) {
           setView(context.view);
           if (context.tray_result) acceptTrayResult(context.tray_result);
-          if (context.view === "diagnostics") diagnosticQueued.current = true;
+          if (context.diagnostic_pending) diagnosticQueued.current = true;
           await refresh();
           return;
         }
@@ -217,7 +217,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         void invoke<InterfaceContext>("interface_context")
           .then((context) => {
             if (context?.tray_result) acceptTrayResult(context.tray_result);
-            if (event.payload === "diagnostics") requestTrayDiagnostic();
+            if (context?.diagnostic_pending) requestTrayDiagnostic();
           })
           .catch((error) => setError(String(error)));
       }

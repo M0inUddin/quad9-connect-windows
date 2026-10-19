@@ -11,17 +11,19 @@ type BridgeWindow = Window & {
   };
 };
 
-test("tray diagnostics queue during startup and coalesce behind a busy action", async ({
+test("tray diagnostics survive startup navigation and coalesce behind a busy action", async ({
   page,
 }) => {
   await page.addInitScript(() => {
     let next = 0;
+    let diagnosticPending = true;
     const callbacks = new Map<number, (event: unknown) => void>();
     const listeners = new Map<string, Set<number>>();
     const bridge: BridgeWindow["trayQueueTest"] = {
       calls: [],
       diagnostics: 0,
       emit(event, payload) {
+        if (event === "navigate" && payload === "diagnostics") diagnosticPending = true;
         listeners
           .get(event)
           ?.forEach((id) => callbacks.get(id)?.({ event, id, payload }));
@@ -54,8 +56,11 @@ test("tray diagnostics queue during startup and coalesce behind a busy action", 
             command === "network_monitor_error"
           )
             return null;
-          if (command === "interface_context")
-            return { view: "connection", tray_result: null };
+          if (command === "interface_context") {
+            const diagnostic_pending = diagnosticPending;
+            diagnosticPending = false;
+            return { view: "settings", diagnostic_pending, tray_result: null };
+          }
           if (command !== "service_request" || !args.request)
             throw new Error(`Unexpected IPC ${command}`);
           const request = args.request;
@@ -112,9 +117,10 @@ test("tray diagnostics queue during startup and coalesce behind a busy action", 
       ),
     )
     .toBe(true);
-  await page.evaluate(() =>
-    (window as BridgeWindow).trayQueueTest.emit("navigate", "diagnostics"),
-  );
+  await page.evaluate(() => {
+    (window as BridgeWindow).trayQueueTest.emit("navigate", "settings");
+  });
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
   expect(
     await page.evaluate(
       () => (window as BridgeWindow).trayQueueTest.diagnostics,
