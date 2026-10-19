@@ -99,3 +99,18 @@ Closing WARP's window left its UI process hidden. One subsequent snapshot measur
 After this comparison, the project owner chose to keep Tauri/React and pursue incremental improvements. Numeric specification targets and their recorded assessments remain unchanged. The comparison does not convert Quad9's missed or unassessed targets into passes. Cloudflare's [published device requirements](https://developers.cloudflare.com/warp-client/get-started/) describe whole-device RAM, not WARP process usage.
 
 The incremental optimization is tracked in [PR #12](https://github.com/M0inUddin/quad9-connect-windows/pull/12). Its description records measurements of the corresponding release artifact. The earlier host results above retain their original binary hash and measurement scope.
+
+## Window CPU follow-up
+
+[PR #13](https://github.com/M0inUddin/quad9-connect-windows/pull/13) added Windows job accounting so final CPU time from exited desktop descendants remains counted. The [sanitized Windows 11 record](validation/windows11-26300-window-cpu.json) identifies the same release MSVC interface binary tested for PR #12 and separates two later observations.
+
+| Interval | Measured seconds after 30 seconds settling | CPU, percent of one logical CPU | Peak working set | Foreground samples |
+| --- | ---: | ---: | ---: | ---: |
+| New isolated profile, diagnostic while the harness was under development | 300.50 | 1.2375% | 147.72 MiB | None |
+| Reused isolated profile, after user foreground confirmation | 301.00 | 1.0122% | 372.02 MiB | 82 of 113 |
+
+The repeated interval began in the foreground and later lost it. Both intervals include complete desktop CPU accounting, including exited children, and exclude service counters because the service was absent. Complete-process budget fields and the strict foreground desktop comparison remain unassessed. Both observed CPU averages exceed 0.5%. Foreground conditions differ, so these intervals remain separate observations. The low-memory policy can affect an inactive window's working set.
+
+The repeated interval had six WebView processes at every snapshot, yet job accounting detected a child that started and exited between snapshots. A separate instrumented trace identified short-lived WebView `unzip.mojom.Unzipper` utilities. That trace does not establish the cause of all CPU usage. The measured intervals had no CDP client, verbose browser logging, axe scan, or screen reader active. Windows settings and DNS remained unchanged.
+
+Foreground stability, simultaneous service and desktop counters, the main-window memory limit, and measurements on the specified reference machine remain release gates. The service startup-log changes introduced after these measurements need their own physical service/resource validation.

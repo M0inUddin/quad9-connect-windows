@@ -38,6 +38,8 @@ Release MSVC performance and accessibility validation on the same Windows 11 hos
 
 The native UI and desktop resource tests ran unelevated after service cleanup and observed the actual unavailable-service state. Desktop-only intervals leave combined service/desktop budget decisions unassessed. A fresh authorized physical UI run and simultaneous counters remain release work. See the [measurement report](performance-accessibility.md) and [sanitized record](validation/windows11-26300-performance-accessibility.json) for hashes, methods, resource results, and remaining gates. Windows accessibility settings were unchanged; manual Narrator and operating-system contrast-theme checks were not performed.
 
+Windows job accounting now preserves final CPU time from exited desktop descendants. A repeated desktop-only interval with the PR #12 release MSVC interface measured 1.0122% of one logical CPU over 301 seconds and a 372.02 MiB peak working set. It began in the foreground but retained it for 82 of 113 samples, so strict foreground and combined service/desktop budget decisions remain unassessed. The observed CPU remains above 0.5%. See the [window CPU follow-up](performance-accessibility.md#window-cpu-follow-up) and its [sanitized record](validation/windows11-26300-window-cpu.json) for scope and provenance.
+
 ## Remaining release work
 
 1. Run the complete write, restore, service, authorization, and recovery matrix on disposable Windows 11 x64 builds and physical adapters.

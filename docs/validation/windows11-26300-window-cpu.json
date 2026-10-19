@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "date_utc": "2026-10-19",
+  "build": {
+    "type": "Release MSVC, x86_64-pc-windows-msvc",
+    "executable_sha256": "7b5ec862292cb55ee14c6fdda6033f13d2dd91648c8d16ebe5b009df27a5a7a1",
+    "clean_source_commit": "c6982d3351fcfef2fe7f4235678be0eae29b5aba",
+    "source_tree": "453da70440095af32678a0fa60f384221d7ecd57",
+    "artifact_run": "https://github.com/M0inUddin/quad9-connect-windows/actions/runs/39291214666",
+    "gui_change_pr": "https://github.com/M0inUddin/quad9-connect-windows/pull/12"
+  },
+  "host": {
+    "windows_version": "10.0.26300",
+    "processor": "13th Gen Intel Core i7-1370P",
+    "logical_processors": 20,
+    "installed_ram_gib": 32,
+    "webview2_version": "155.0.4283.62",
+    "service": "absent",
+    "connection_state": "Service unavailable"
+  },
+  "method": {
+    "cpu": "Cumulative Windows job kernel and user time includes exited desktop descendants; divided by wall time, normalized to one logical CPU.",
+    "working_set": "Sum of process working sets, counting shared resident pages in each process.",
+    "foreground": "Native foreground PID sampled with counters; every sample must match the desktop for foreground qualification.",
+    "observation": "CDP client detached throughout each counter interval; debugging listener remained enabled. No verbose browser logging, axe, or screen reader during these intervals.",
+    "harness_pr": "https://github.com/M0inUddin/quad9-connect-windows/pull/13",
+    "repeat_harness_base": "015b9ecf0f889f0defd5381fd4521c1d42065f83",
+    "repeat_adaptations": [
+      "Reused the earlier isolated test profile.",
+      "Waited for explicit user foreground confirmation before the settling period."
+    ],
+    "settings": "Windows settings and DNS configuration unchanged; the service was not installed."
+  },
+  "intervals": {
+    "new_isolated_profile_diagnostic": {
+      "settle_seconds": 30,
+      "measured_seconds": 300.49979599999995,
+      "cpu_percent_one_logical_core": 1.237521638783409,
+      "cpu_measurement_complete": true,
+      "maximum_working_set_mib": 147.72265625,
+      "average_working_set_mib": 136.16867559523808,
+      "process_exits_observed": true,
+      "job_processes_at_start": 7,
+      "job_processes_at_end": 17,
+      "foreground_samples": 0,
+      "samples": 105,
+      "foreground_throughout": false,
+      "complete_process_set": false,
+      "desktop_only_cpu_target_pass": null,
+      "combined_cpu_target_pass": null,
+      "combined_memory_target_pass": null
+    },
+    "reused_profile_after_user_foreground_confirmation": {
+      "settle_seconds": 30,
+      "measured_seconds": 301.00222249999996,
+      "cpu_percent_one_logical_core": 1.0122433564423268,
+      "cpu_measurement_complete": true,
+      "maximum_working_set_mib": 372.0234375,
+      "average_working_set_mib": 214.12233821902655,
+      "process_exits_observed": true,
+      "job_processes_at_start": 7,
+      "job_processes_at_end": 8,
+      "foreground_samples": 82,
+      "samples": 113,
+      "foreground_throughout": false,
+      "complete_process_set": false,
+      "desktop_only_cpu_target_pass": null,
+      "combined_cpu_target_pass": null,
+      "combined_memory_target_pass": null
+    }
+  },
+  "scope": [
+    "The first interval ran while the PR13 harness was being developed. It is diagnostic evidence.",
+    "The repeated interval reached the foreground initially but did not retain it for every sample.",
+    "Both observed CPU averages exceed 0.5 percent of one logical CPU. Formal complete-process acceptance remains unassessed.",
+    "Foreground conditions differ, so the two intervals are reported separately.",
+    "A separate instrumented trace identified short-lived WebView unzip.mojom.Unzipper utilities. That trace is not a budget measurement and does not establish the cause of all CPU usage.",
+    "This 20-logical-CPU, 32-GiB development host is not the four-logical-CPU, 8-GiB reference machine.",
+    "The new service startup logging feature was not installed on this host during these measurements."
+  ],
+  "result": "CPU accounting now includes exited desktop descendants. Foreground and simultaneous service/desktop resource qualification remain open."
+}
