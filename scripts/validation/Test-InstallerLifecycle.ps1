@@ -130,6 +130,21 @@ try {
         $retained = @(Get-ChildItem -LiteralPath (Join-Path $Fixture 'retained-staging') -Directory)
         if ((Test-Path -LiteralPath $partialPath) -or $retained.Count -ne 1 -or
             [IO.File]::ReadAllText((Join-Path $retained[0].FullName 'quad9-service.exe')) -cne 'interrupted copy') { throw 'Partial staging was not retained safely for a retry.' }
+        # Log cleanup is confined to three fixed names after service removal.
+        $script:Data = Join-Path $Fixture 'operational-log-data'
+        [IO.Directory]::CreateDirectory($script:Data) | Out-Null
+        function Get-Service { return $null }
+        foreach ($name in @('startup-events.v1.json', 'startup-events.v1.json.tmp', 'startup-events.v1.lock', 'dns.journal.json', 'external-note.txt')) {
+            [IO.File]::WriteAllText((Join-Path $script:Data $name), 'retained fixture')
+        }
+        Remove-Quad9OperationalLog
+        if (@(Get-ChildItem -LiteralPath $script:Data).Count -ne 2 -or
+            -not (Test-Path -LiteralPath (Join-Path $script:Data 'dns.journal.json')) -or
+            -not (Test-Path -LiteralPath (Join-Path $script:Data 'external-note.txt'))) { throw 'Operational cleanup touched recovery or unrelated files.' }
+        [IO.File]::WriteAllText((Join-Path $script:Data 'startup-events.v1.json'), 'still owned by service')
+        function Get-Service { return [pscustomobject]@{ Status = 'Running' } }
+        Must-Fail { Remove-Quad9OperationalLog }
+        if (-not (Test-Path -LiteralPath (Join-Path $script:Data 'startup-events.v1.json'))) { throw 'Log cleanup ran while a service remained.' }
     } $fixture
     Write-Output 'Installer contract tests passed: payload integrity, unsafe paths, unsupported storage, blocked uninstall, and upgrade rollback.'
 } finally {

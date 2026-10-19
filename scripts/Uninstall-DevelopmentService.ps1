@@ -24,5 +24,7 @@ Stop-Service -Name Quad9Connect
 (Get-Service -Name Quad9Connect).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
 & sc.exe delete Quad9Connect | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Service removal failed. Preserve the installed recovery binary.' }
+$lifecycle = Import-Module (Join-Path $PSScriptRoot '..\installer\windows\InstallerLifecycle.psm1') -PassThru -Force
+& $lifecycle { Remove-Quad9OperationalLog }
 Remove-Item -LiteralPath $binary
 Write-Output 'The service was removed after successful DNS restoration. Protected recovery records and operator membership are retained for inspection.'

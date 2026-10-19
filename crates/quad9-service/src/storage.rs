@@ -27,7 +27,7 @@ fn storage_error(error: impl std::fmt::Display) -> CoreError {
     CoreError::Journal(error.to_string())
 }
 
-fn validate_file(file: &File) -> Result<(), CoreError> {
+pub(crate) fn validate_file(file: &File) -> Result<(), CoreError> {
     #[cfg(all(windows, not(test)))]
     quad9_native::service::validate_private_file(file).map_err(storage_error)?;
     #[cfg(any(not(windows), test))]
@@ -35,7 +35,7 @@ fn validate_file(file: &File) -> Result<(), CoreError> {
     Ok(())
 }
 
-fn reject_reparse(path: &Path) -> Result<bool, CoreError> {
+pub(crate) fn reject_reparse(path: &Path) -> Result<bool, CoreError> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
             #[cfg(windows)]

@@ -1,10 +1,18 @@
-use crate::{protocol::*, runtime::*, storage::AtomicFiles};
+use crate::{
+    protocol::*,
+    runtime::*,
+    startup_log::{Event, StartupLog},
+    storage::AtomicFiles,
+};
 use quad9_core::{CoreError, Target};
 use quad9_native::{
     service::{self, MachineDirectory, Ready},
     NativeError, WindowsDnsBackend,
 };
-use std::sync::atomic::AtomicBool;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    mpsc, Arc,
+};
 
 impl ServiceBackend for WindowsDnsBackend {
     fn adapters(&mut self) -> Result<Vec<AdapterSummary>, CoreError> {
@@ -42,10 +50,40 @@ fn run(stop: &AtomicBool, ready: Ready, backend: WindowsDnsBackend) -> Result<()
     let directory = MachineDirectory::open()?;
     let store = AtomicFiles::open_protected_directory(directory.path())
         .map_err(|e| NativeError::InvalidData(e.to_string()))?;
-    let mut controller =
-        Controller::start(backend, store).map_err(|e| NativeError::InvalidData(e.to_string()))?;
-    service::serve(stop, ready, |actor, bytes| {
-        let response = match serde_json::from_slice::<Request>(bytes) {
+    // Logging is best effort and has its own lock. It never substitutes for a
+    // recovery record or changes whether controller startup is safe.
+    let log = StartupLog::new(directory.path()).ok().map(Arc::new);
+    let record = |event, code| {
+        if let Some(log) = &log {
+            let _ = log.record(event, code);
+        }
+    };
+    record(Event::ControllerStarting, None);
+    let mut controller = match Controller::start(backend, store) {
+        Ok(controller) => controller,
+        Err(error) => {
+            record(Event::ControllerStartFailed, None);
+            return Err(NativeError::InvalidData(error.to_string()));
+        }
+    };
+    record(Event::ControllerStarted, None);
+    std::thread::scope(|scope| {
+        let (finished, finish) = mpsc::channel::<()>();
+        let _cleanup = log.as_ref().and_then(|log| {
+            let log = Arc::clone(log);
+            std::thread::Builder::new()
+                .name("quad9-log-retention".into())
+                .spawn_scoped(scope, move || loop {
+                    let wait = log.prune().unwrap_or(std::time::Duration::from_secs(60));
+                    match finish.recv_timeout(wait) {
+                        Err(mpsc::RecvTimeoutError::Timeout) => {}
+                        _ => break,
+                    }
+                })
+                .ok()
+        });
+        let result = service::serve(stop, ready, |actor, bytes| {
+            let response = match serde_json::from_slice::<Request>(bytes) {
             Ok(request) if request.revision().is_some()
                 && directory.path().join("installer-maintenance").try_exists().unwrap_or(true) =>
                 Response::error(&request.id, "maintenance", "Installation or recovery is in progress. Retry after the administrator finishes repair."),
@@ -56,7 +94,20 @@ fn run(stop: &AtomicBool, ready: Ready, backend: WindowsDnsBackend) -> Result<()
                 "Malformed request or unsupported command fields",
             ),
         };
-        serde_json::to_vec(&response).expect("Response fields are serializable")
+            serde_json::to_vec(&response).expect("Response fields are serializable")
+        });
+        drop(finished);
+        match &result {
+            Err(error) if !stop.load(Ordering::Acquire) => record(
+                Event::PipeHostFailed,
+                match error {
+                    NativeError::Windows { code, .. } => Some(*code),
+                    _ => None,
+                },
+            ),
+            _ => record(Event::ServiceStopped, None),
+        }
+        result
     })
 }
 

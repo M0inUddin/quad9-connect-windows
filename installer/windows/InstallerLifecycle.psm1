@@ -440,9 +440,24 @@ function Uninstall-Quad9Payload([object] $State) {
     Complete-Quad9Removal $State
 }
 
+function Remove-Quad9OperationalLog {
+    if (Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue) { throw 'Remove the stopped service registration before clearing operational logs.' }
+    if (-not (Test-Path -LiteralPath $script:Data)) { return }
+    Assert-ProtectedDirectory $script:Data $false
+    foreach ($name in @('startup-events.v1.json', 'startup-events.v1.json.tmp', 'startup-events.v1.lock')) {
+        $path = Join-Path $script:Data $name
+        if (Test-Path -LiteralPath $path) {
+            Assert-RegularPath $path
+            Assert-TrustedAcl $path
+            Remove-Item -LiteralPath $path
+        }
+    }
+}
+
 function Complete-Quad9Removal([object] $State) {
     if (Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue) { throw 'A service still exists. Refusing file removal.' }
     if (Test-Path -LiteralPath $script:Data) { Assert-ProtectedDirectory $script:Data $false; Clear-MaintenanceGate }
+    Remove-Quad9OperationalLog
     Undo-Enrollment $State.enrollment
     # Once reversed, later cleanup retries must not remove new administrator
     # membership changes made after the successful removal.
