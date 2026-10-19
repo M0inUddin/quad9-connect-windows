@@ -49,14 +49,22 @@ mod http {
     use std::{
         collections::BTreeMap,
         ffi::c_void,
-        mem, ptr,
+        mem,
+        net::{IpAddr, Ipv4Addr, Ipv6Addr},
+        ptr,
         sync::{
             atomic::{AtomicBool, AtomicUsize, Ordering},
             mpsc, Arc, Mutex, OnceLock,
         },
         time::{Instant, SystemTime, UNIX_EPOCH},
     };
-    use windows_sys::Win32::{Foundation::GetLastError, Networking::WinHttp::*};
+    use windows_sys::Win32::{
+        Foundation::GetLastError,
+        Networking::{
+            WinHttp::*,
+            WinSock::{AF_INET, AF_INET6, SOCKADDR_IN, SOCKADDR_IN6, SOCKADDR_STORAGE},
+        },
+    };
 
     // A timed-out callback can outlive the caller. Keep this slot until every
     // HANDLE_CLOSING notification, so repeated checks cannot accumulate work.
@@ -192,6 +200,27 @@ mod http {
         }
     }
 
+    fn destination_matches(remote: &SOCKADDR_STORAGE, address: &str, port: u16) -> bool {
+        match (remote.ss_family, address.parse::<IpAddr>()) {
+            (AF_INET, Ok(IpAddr::V4(expected))) => {
+                // SAFETY: Initialized SOCKADDR_STORAGE has enough size and
+                // alignment for SOCKADDR_IN; the family was checked above.
+                let remote = unsafe { &*ptr::from_ref(remote).cast::<SOCKADDR_IN>() };
+                // SAFETY: The IPv4 address union contains initialized bytes.
+                let actual = Ipv4Addr::from(unsafe { remote.sin_addr.S_un.S_addr }.to_ne_bytes());
+                actual == expected && u16::from_be(remote.sin_port) == port
+            }
+            (AF_INET6, Ok(IpAddr::V6(expected))) => {
+                // SAFETY: Storage size, alignment and address family match.
+                let remote = unsafe { &*ptr::from_ref(remote).cast::<SOCKADDR_IN6>() };
+                // SAFETY: The IPv6 address union contains initialized bytes.
+                let actual = Ipv6Addr::from(unsafe { remote.sin6_addr.u.Byte });
+                actual == expected && u16::from_be(remote.sin6_port) == port
+            }
+            _ => false,
+        }
+    }
+
     fn request(
         address: &str,
         port: u16,
@@ -216,9 +245,13 @@ mod http {
                 WINHTTP_FLAG_ASYNC,
             )
         })?;
-        // Never reuse another session's connection to this hostname. Each
-        // address-family result must come from its own literal destination.
-        option(&session, WINHTTP_OPTION_DISABLE_GLOBAL_POOLING, &1u32)?;
+        // Older WinHTTP runtimes reject this option. The mandatory connected
+        // destination check below still rejects a pooled connection to any
+        // different IP, family or port. Never relax resolution or TLS checks.
+        match option(&session, WINHTTP_OPTION_DISABLE_GLOBAL_POOLING, &1u32) {
+            Ok(()) | Err(ERROR_WINHTTP_INVALID_OPTION) => {}
+            Err(error) => return Err(error.into()),
+        }
         option(
             &session,
             WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL,
@@ -258,7 +291,7 @@ mod http {
             WINHTTP_OPTION_MAX_RESPONSE_HEADER_SIZE,
             &16_384u32,
         )?;
-        let address = wide(address);
+        let resolution_address = wide(address);
         // This documented request option changes resolution only. SNI, Host,
         // and normal certificate validation still use dns.quad9.net. Refuse an
         // unsupported option; never fall back to the system resolver.
@@ -267,8 +300,8 @@ mod http {
             WinHttpSetOption(
                 request.0,
                 WINHTTP_OPTION_RESOLUTION_HOSTNAME,
-                address.as_ptr().cast(),
-                (address.len() * 2) as u32,
+                resolution_address.as_ptr().cast(),
+                (resolution_address.len() * 2) as u32,
             )
         } == 0
         {
@@ -324,6 +357,29 @@ mod http {
             return Err(last_error().into());
         }
         wait(&events, deadline, true)?;
+        let mut connection_info = WINHTTP_CONNECTION_INFO {
+            cbSize: mem::size_of::<WINHTTP_CONNECTION_INFO>() as u32,
+            ..Default::default()
+        };
+        let mut connection_length = mem::size_of::<WINHTTP_CONNECTION_INFO>() as u32;
+        // SAFETY: Headers have completed; WinHTTP writes into a fully initialized
+        // structure of the supplied size. No local or remote address is logged.
+        if unsafe {
+            WinHttpQueryOption(
+                request.0,
+                WINHTTP_OPTION_CONNECTION_INFO,
+                ptr::from_mut(&mut connection_info).cast(),
+                &mut connection_length,
+            )
+        } == 0
+        {
+            return Err(last_error().into());
+        }
+        if connection_length as usize != mem::size_of::<WINHTTP_CONNECTION_INFO>()
+            || !destination_matches(&connection_info.RemoteAddress, address, port)
+        {
+            return Err(Failure::Windows(ERROR_WINHTTP_INVALID_SERVER_RESPONSE));
+        }
         let mut protocol = 0u32;
         let mut protocol_length = mem::size_of::<u32>() as u32;
         // SAFETY: The completed request writes its negotiated protocol DWORD.
@@ -435,6 +491,38 @@ mod http {
     mod tests {
         use super::*;
         use std::time::Duration;
+        #[test]
+        fn replies_must_match_the_requested_ip_family_address_and_port() {
+            let mut storage = SOCKADDR_STORAGE::default();
+            let mut v4 = SOCKADDR_IN {
+                sin_family: AF_INET,
+                sin_port: 443u16.to_be(),
+                ..Default::default()
+            };
+            v4.sin_addr.S_un.S_addr = u32::from_ne_bytes([127, 0, 0, 1]);
+            // SAFETY: Storage is large and aligned enough for this initialized
+            // IPv4 sockaddr; all remaining storage bytes remain initialized.
+            unsafe { ptr::write(ptr::from_mut(&mut storage).cast::<SOCKADDR_IN>(), v4) };
+            assert!(destination_matches(&storage, "127.0.0.1", 443));
+            assert!(!destination_matches(&storage, "127.0.0.2", 443));
+            assert!(!destination_matches(&storage, "127.0.0.1", 444));
+            assert!(!destination_matches(&storage, "::ffff:127.0.0.1", 443));
+            let mut v6 = SOCKADDR_IN6 {
+                sin6_family: AF_INET6,
+                sin6_port: 443u16.to_be(),
+                ..Default::default()
+            };
+            v6.sin6_addr.u.Byte = "2620:fe::fe".parse::<Ipv6Addr>().unwrap().octets();
+            // SAFETY: Storage size and alignment also cover IPv6 sockaddr.
+            unsafe { ptr::write(ptr::from_mut(&mut storage).cast::<SOCKADDR_IN6>(), v6) };
+            assert!(destination_matches(&storage, "2620:fe::fe", 443));
+            assert!(!destination_matches(&storage, "2620:fe::9", 443));
+            assert!(!destination_matches(&storage, "2620:fe::fe", 80));
+            assert!(!destination_matches(&storage, "9.9.9.9", 443));
+            assert!(!destination_matches(&storage, "dns.quad9.net", 443));
+            storage.ss_family = 0;
+            assert!(!destination_matches(&storage, "2620:fe::fe", 443));
+        }
         #[test]
         fn cancellation_releases_context_and_slot_after_a_silent_peer() {
             use std::{io::Read, net::TcpListener};

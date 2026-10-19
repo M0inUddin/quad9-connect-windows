@@ -11,8 +11,11 @@ The direct check sends HTTPS HEAD requests to the fixed Quad9 primary IPv4
 `WINHTTP_OPTION_RESOLUTION_HOSTNAME` supplies each literal connection address,
 avoiding a system-resolver dependency. An unsupported option produces a failure;
 there is no hostname-resolution fallback. Global cross-session connection pooling
-is disabled so another session's hostname connection cannot satisfy an address
-family's result. Windows settings remain unchanged.
+is disabled where the runtime supports that option. Every response must also
+pass `WINHTTP_OPTION_CONNECTION_INFO` validation against the requested IP address,
+family, and port. An unsupported pooling option does not bypass that check;
+missing connection information or a mismatched destination fails the result.
+Windows settings remain unchanged.
 
 The requests require HTTP/2 and TLS 1.2 or 1.3. They use no proxy, cookies,
 automatic authentication, request body, client certificate, or automatic
@@ -50,5 +53,6 @@ physical network behavior.
 References: [Quad9 service addresses](https://docs.quad9.net/services/),
 [Quad9 HTTP/2 requirement](https://docs.quad9.net/FAQs/),
 [WinHTTP options](https://learn.microsoft.com/en-us/windows/win32/winhttp/option-flags),
+[connected destination information](https://learn.microsoft.com/en-us/windows/win32/api/winhttp/ns-winhttp-winhttp_connection_info),
 [asynchronous cancellation and context lifetime](https://learn.microsoft.com/en-us/windows/win32/api/winhttp/nf-winhttp-winhttpclosehandle),
 and [WinHTTP concurrency](https://learn.microsoft.com/en-us/windows/win32/winhttp/concurrency-in-winhttp).
