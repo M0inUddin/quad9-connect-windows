@@ -82,14 +82,7 @@ function Remove-HostTestInstallation {
     if (Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue) {
         throw 'DNS is restored, but the stopped service and recovery records require inspection.'
     }
-    $group = Get-LocalGroup -Name Quad9ConnectOperators -ErrorAction SilentlyContinue
-    if ($null -ne $group) {
-        if (-not $Plan.operator_was_member) {
-            $member = Get-LocalGroupMember -Group $group | Where-Object { $_.SID.Value -eq $Plan.operator_sid }
-            if ($member) { Remove-LocalGroupMember -Group $group -Member $member }
-        }
-        if (-not $Plan.group_existed -and @(Get-LocalGroupMember -Group $group).Count -eq 0) { Remove-LocalGroup -Group $group }
-    }
+    Restore-HostOperatorEnrollment $Plan
     # Retain this run's recovery records without making a later development
     # install mistake them for a preexisting installation. Never delete them.
     $archive = Join-Path $runRoot 'retained-service-state'
@@ -115,9 +108,9 @@ if ($Recover) {
     if (Test-Path -LiteralPath (Join-Path $runRoot 'completed')) { return }
     $plan = Get-Content -LiteralPath (Join-Path $runRoot 'plan.json') -Raw | ConvertFrom-Json
     $owner = Get-Process -Id $plan.owner_pid -ErrorAction SilentlyContinue
-    if ($owner -and $owner.StartTime.ToUniversalTime().Ticks -eq $plan.owner_started_ticks -and $owner.Path -eq $powershell) {
+    if (Test-HostValidationOwner $plan $owner) {
         Stop-Process -Id $owner.Id -Force
-        $owner.WaitForExit(10000) | Out-Null
+        if (-not $owner.WaitForExit(10000)) { throw 'The test process did not stop; recovery cannot race it.' }
     }
     try {
         Remove-HostTestInstallation $plan
@@ -133,6 +126,12 @@ if ($Recover) {
 
 $os = Get-CimInstance Win32_OperatingSystem
 if ($os.Caption -notlike '*Windows 11*' -or -not [Environment]::Is64BitProcess) { throw 'Use a 64-bit administrator shell on Windows 11.' }
+$hostArguments = [Environment]::GetCommandLineArgs()
+$fileIndex = [Array]::IndexOf($hostArguments, '-File')
+if ($fileIndex -lt 0 -or $fileIndex + 1 -ge $hostArguments.Length -or
+    [IO.Path]::GetFullPath($hostArguments[$fileIndex + 1]) -ne $PSCommandPath) {
+    throw 'Launch this test in a dedicated PowerShell process with -File.'
+}
 if ((Test-Path -LiteralPath $runRoot) -or (Test-Path -LiteralPath $installRoot) -or
     (Test-Path -LiteralPath $serviceData) -or (Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue)) {
     throw 'This test requires fresh run, service, Program Files, and service-data locations. Existing recovery state is preserved.'
@@ -200,6 +199,7 @@ try {
     $plan = [pscustomobject]@{ schema_version = 1; adapter_id = $AdapterId.ToString(); families = $families;
         operator_sid = $OperatorSid; group_existed = ($null -ne $group); operator_was_member = $wasMember;
         owner_pid = $PID; owner_started_ticks = (Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks;
+        owner_executable = (Get-Process -Id $PID).Path;
         binary_sha256 = (Get-FileHash -LiteralPath (Join-Path $runRoot 'quad9-service.exe') -Algorithm SHA256).Hash }
     $plan | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath (Join-Path $runRoot 'plan.json') -Encoding utf8
     $action = New-ScheduledTaskAction -Execute $powershell -Argument ('-NoProfile -ExecutionPolicy Bypass -File "{0}" -RunDirectory "{1}" -Recover' -f (Join-Path $runRoot 'Test-Windows11Host.ps1'), $runRoot)
@@ -269,6 +269,8 @@ try {
         } catch {
             $record.result = 'failed'
             $record.error = [string]$record.error + ' Cleanup: ' + $_.Exception.Message
+            try { Assert-HostBaseline $plan; $record.baseline_restored = $true } catch { }
+            $record.service_removed = ($null -eq (Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue))
         }
     }
     $record['finished_utc'] = [DateTimeOffset]::UtcNow.ToString('o')

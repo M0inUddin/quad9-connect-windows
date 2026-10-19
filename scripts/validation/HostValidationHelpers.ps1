@@ -1,5 +1,25 @@
 Set-StrictMode -Version Latest
 
+function Test-HostValidationOwner {
+    param($Plan, $Owner)
+    if ($null -eq $Owner -or $Owner.StartTime.ToUniversalTime().Ticks -ne $Plan.owner_started_ticks) { return $false }
+    if ($Owner.Path -ne $Plan.owner_executable) { throw 'The live owner executable does not match the saved test process.' }
+    return $true
+}
+
+function Restore-HostOperatorEnrollment {
+    param($Plan)
+    $group = Get-LocalGroup -Name Quad9ConnectOperators -ErrorAction SilentlyContinue
+    if ($null -eq $group) { return }
+    if (-not $Plan.operator_was_member) {
+        $member = Get-LocalGroupMember -Group $group | Where-Object { $_.SID.Value -eq $Plan.operator_sid }
+        if ($member) { Remove-LocalGroupMember -Group $group -Member $member }
+    }
+    if (-not $Plan.group_existed -and @(Get-LocalGroupMember -Group $group).Count -eq 0) {
+        Remove-LocalGroup -InputObject $group
+    }
+}
+
 function Get-HostDnsSignature {
     param([Parameter(Mandatory)] $Snapshot)
     if ($Snapshot.Code -ne 0) { throw "Native DNS read failed: $($Snapshot.Code)" }
