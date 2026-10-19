@@ -61,6 +61,30 @@ function Invoke-UserClient {
     return $output
 }
 
+function Wait-ValidationService([string] $State) {
+    $controller = Get-Service -Name Quad9Connect
+    try { $controller.WaitForStatus($State, [TimeSpan]::FromSeconds(30)) }
+    finally { $controller.Dispose() }
+}
+
+function Invoke-RemovalValidation([string[]] $RemovalArguments) {
+    # A separate process releases every cmdlet-owned SCM handle on exit. The
+    # parent retains only the deliberate pending-deletion fixture handle.
+    $script:sequence++
+    $outputPath = Join-Path $shared "removal-$script:sequence.out"
+    $errorPath = Join-Path $shared "removal-$script:sequence.err"
+    $arguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', ('"{0}"' -f $removal)) + $RemovalArguments
+    $process = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath
+    try {
+        if (-not $process.WaitForExit(120000)) {
+            $process.Kill()
+            $process.WaitForExit()
+            throw 'The removal validation process exceeded its deadline.'
+        }
+        return [pscustomobject]@{ exit_code = $process.ExitCode; error_text = [IO.File]::ReadAllText($errorPath) }
+    } finally { $process.Dispose() }
+}
+
 $status = Invoke-AdminRequest @{ type = 'get_status' }
 if ($status.result.type -ne 'status' -or $status.result.revision -ne 0) { throw 'Fresh service state is not off at revision zero.' }
 $read = @{ version = 1; id = 'operator-status'; command = @{ type = 'get_status' } }
@@ -84,7 +108,7 @@ if ($restored.result.type -ne 'restored' -or -not $restored.result.complete) { t
 $retry = Invoke-UserClient -User $operator -Request $enableRequest
 if ($retry.result.type -ne 'enabled' -or $retry.result.revision -ne 1) { throw 'Retry did not return its original receipt.' }
 Restart-Service -Name Quad9Connect
-(Get-Service -Name Quad9Connect).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
+Wait-ValidationService 'Running'
 $retry = Invoke-UserClient -User $operator -Request $enableRequest
 $status = Invoke-AdminRequest @{ type = 'get_status' }
 if ($retry.result.type -ne 'enabled' -or $status.result.revision -ne 2 -or $status.result.journal.phase -ne 'restored') { throw 'Retry after restart changed the restored state.' }
@@ -117,14 +141,17 @@ try {
     $refused = $false
     try { Start-Service Quad9Connect -ErrorAction Stop } catch { $refused = $true }
     if (-not $refused) { throw 'Invalid request state unexpectedly started the service.' }
-    (Get-Service Quad9Connect).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+    Wait-ValidationService 'Stopped'
     $log = Get-Content -LiteralPath $logPath -Raw | ConvertFrom-Json
     if ('controller_start_failed' -notin $log.records.event) { throw 'Controller startup failure was not recorded.' }
 } finally {
-    if ((Get-Service Quad9Connect).Status -ne 'Stopped') {
-        Stop-Service Quad9Connect
-        (Get-Service Quad9Connect).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
-    }
+    $controller = Get-Service -Name Quad9Connect
+    try {
+        if ($controller.Status -ne 'Stopped') {
+            Stop-Service Quad9Connect
+            $controller.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+        }
+    } finally { $controller.Dispose() }
     [IO.File]::WriteAllBytes($requestPath, $savedRequests)
 }
 Start-Service Quad9Connect
@@ -141,14 +168,13 @@ $expectedHash = (Get-FileHash -LiteralPath $binary).Hash
 $heldService = Get-Service Quad9Connect
 $null = $heldService.ServiceHandle
 try {
-    $deferred = $false
-    try { & $removal -RemovalTimeoutSeconds 0 } catch { $deferred = $_.Exception.Message -like '*deletion did not finish*' }
-    if (-not $deferred -or -not (Test-Path -LiteralPath $binary) -or -not (Test-Path -LiteralPath $logPath)) { throw 'Pending SCM deletion must retain recovery binaries and logs.' }
+    $attempt = Invoke-RemovalValidation @('-RemovalTimeoutSeconds', '0')
+    if ($attempt.exit_code -eq 0 -or $attempt.error_text -notlike '*deletion did not finish*' -or -not (Test-Path -LiteralPath $binary) -or -not (Test-Path -LiteralPath $logPath)) { throw "Pending SCM deletion must retain recovery binaries and logs: $($attempt.error_text)" }
 } finally { $heldService.Dispose() }
-$wrongHashRefused = $false
-try { & $removal -FinishPendingRemoval -ExpectedBinarySha256 ('0' * 64) } catch { $wrongHashRefused = $_.Exception.Message -like '*binary changed*' }
-if (-not $wrongHashRefused -or -not (Test-Path -LiteralPath $binary)) { throw 'Deferred cleanup accepted an unknown recovery binary.' }
-& $removal -FinishPendingRemoval -ExpectedBinarySha256 $expectedHash
+$attempt = Invoke-RemovalValidation @('-FinishPendingRemoval', '-ExpectedBinarySha256', ('0' * 64))
+if ($attempt.exit_code -eq 0 -or $attempt.error_text -notlike '*binary changed*' -or -not (Test-Path -LiteralPath $binary)) { throw "Deferred cleanup did not reject the wrong binary hash: $($attempt.error_text)" }
+$attempt = Invoke-RemovalValidation @('-FinishPendingRemoval', '-ExpectedBinarySha256', $expectedHash)
+if ($attempt.exit_code -ne 0) { throw "Deferred removal failed: $($attempt.error_text)" }
 if (Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue) { throw 'Development service was not removed.' }
 if (Test-Path -LiteralPath $logPath) { throw 'Safe removal retained operational logs.' }
 Write-Output 'Service validation passed: standard operator control, unauthorized denial, private storage, bounded malformed frames, native enable/restore, durable retry after restart, and uninstall restoration.'
