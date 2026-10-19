@@ -55,7 +55,9 @@ $nsis = ./scripts/Get-InstallerToolchain.ps1
 ./scripts/Build-WindowsInstaller.ps1 -MakeNsis $nsis
 ```
 
-The project owns its NSIS entry point so upgrades do not invoke an old uninstaller before preserving active service state. The compiler is NSIS 3.13 from Tauri's binary release, pinned by SHA-256. The build emits a clearly named unsigned setup executable and a `.sha256` checksum in ignored `artifacts/installer`. Build identifiers include the version and payload checksums. The GUI binary remains a normal, unelevated Tauri executable.
+The project owns its NSIS entry point so upgrades do not invoke an old uninstaller before preserving active service state. Setup creates a unique Program Files staging directory with administrator/SYSTEM-only permissions before extracting or executing lifecycle scripts. It loads only trusted Windows PowerShell system modules, including when launched from PowerShell 7. Failed setup retains an administrator-only `lifecycle-error.txt` in that staging directory. Successful setup removes staging files without recursive deletion.
+
+The compiler is NSIS 3.13 from Tauri's binary release, pinned by SHA-256. The build emits a clearly named unsigned setup executable, `.sha256` checksum, and build metadata in ignored `artifacts/installer`. Build identifiers include the version and payload checksums. The GUI binary remains a normal, unelevated Tauri executable.
 
 `Test-InstallerLifecycle.ps1` exercises payload integrity, path validation, failed restoration, and rollback without DNS changes. It runs under both PowerShell editions in CI. The Windows installer workflow builds the actual MSVC release binaries and NSIS package, then tests fresh installation, standard-user access, mutation gating, active upgrade, failed replacement, interrupted upgrade reconciliation, conflict-blocked uninstall, repair, active uninstall, and reinstall in a disposable Windows Server 2025 VM. A separate VM-only binary establishes adapter fixtures. It is never included in the distributable installer.
 

@@ -79,6 +79,15 @@ try {
         function Assert-ServiceIdentity { throw 'The SCM command was changed externally' }
         Must-Fail { Repair-Quad9Payload $state }
         if ($script:Events.Count) { throw 'Repair modified an unrelated service registration.' }
+        # Windows limits local-group descriptions to 48 characters. Exercise that
+        # binding contract before actual installation instead of accepting any text.
+        $script:EnrollmentAdds = 0
+        function Get-LocalGroup { return $null }
+        function New-LocalGroup([string] $Name, [ValidateLength(0,48)][string] $Description) { return [pscustomobject]@{ Name = $Name } }
+        function Get-LocalGroupMember { return @() }
+        function Add-LocalGroupMember { $script:EnrollmentAdds++ }
+        Add-Enrollment ([pscustomobject]@{ sid = 'S-1-5-21-1-2-3-1001' })
+        if ($script:EnrollmentAdds -ne 1) { throw 'Explicit operator enrollment was not applied.' }
     } $fixture
     Write-Output 'Installer contract tests passed: payload integrity, unsafe paths, unsupported storage, blocked uninstall, and upgrade rollback.'
 } finally {

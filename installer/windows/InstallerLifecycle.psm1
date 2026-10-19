@@ -189,7 +189,7 @@ function Get-Enrollment([string] $Sid) {
 
 function Add-Enrollment([object] $Enrollment) {
     $group = Get-LocalGroup -Name Quad9ConnectOperators -ErrorAction SilentlyContinue
-    if ($null -eq $group) { $group = New-LocalGroup -Name Quad9ConnectOperators -Description 'Users authorized to control machine-wide Quad9 DNS settings' }
+    if ($null -eq $group) { $group = New-LocalGroup -Name Quad9ConnectOperators -Description 'Users authorized to control Quad9 DNS' }
     if (-not @(Get-LocalGroupMember -Group $group | Where-Object { $_.SID.Value -eq $Enrollment.sid }).Count) {
         Add-LocalGroupMember -Group $group -Member ([Security.Principal.SecurityIdentifier]$Enrollment.sid)
     }
