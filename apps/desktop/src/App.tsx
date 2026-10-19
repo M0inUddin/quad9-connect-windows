@@ -102,6 +102,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   const actionActive = useRef(false);
   const initializing = useRef(true);
   const diagnosticQueued = useRef(false);
+  const retentionSequence = useRef(0);
   const retry = useRef<Request | null>(null);
   const observationEpoch = useRef(0);
   const nativeGeneration = useRef(0);
@@ -329,7 +330,11 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
     );
     try {
       // A closed busy window keeps its response and exact retry receipt alive.
-      if (isTauri()) await invoke("retain_interface", { retain: true });
+      if (isTauri())
+        await invoke("retain_interface", {
+          retain: true,
+          sequence: ++retentionSequence.current,
+        });
       if (request) {
         const mutation =
           request.command.type === "enable_quad9" ||
@@ -384,7 +389,10 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
       } else {
         setBusy(null);
         if (isTauri() && !retry.current)
-          void invoke("retain_interface", { retain: false }).catch(() => {});
+          void invoke("retain_interface", {
+            retain: false,
+            sequence: ++retentionSequence.current,
+          }).catch(() => {});
       }
     }
   }

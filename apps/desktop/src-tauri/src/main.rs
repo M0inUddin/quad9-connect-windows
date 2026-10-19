@@ -25,6 +25,7 @@ struct Host {
     stop: Arc<AtomicBool>,
     monitor_error: Arc<Mutex<Option<MonitorFailure>>>,
     retain_window: Arc<AtomicBool>,
+    retention_sequence: Arc<AtomicU64>,
     window_transition: Arc<Mutex<()>>,
     destroyed: Arc<(Mutex<u64>, Condvar)>,
     next_view: Arc<Mutex<String>>,
@@ -210,12 +211,19 @@ async fn retain_interface(
     app: tauri::AppHandle,
     window: tauri::Window,
     retain: bool,
+    sequence: Option<u64>,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let host = app.state::<Host>();
         let _transition = host.window_transition.lock().map_err(|e| e.to_string())?;
         if !is_current_window(&app, &window) {
-            return Ok(());
+            return Err("The requesting interface has already closed".into());
+        }
+        if let Some(sequence) = sequence {
+            if sequence <= host.retention_sequence.load(Ordering::Acquire) {
+                return Ok(());
+            }
+            host.retention_sequence.store(sequence, Ordering::Release);
         }
         host.retain_window.store(retain, Ordering::Release);
         if !retain && matches!(window.is_visible(), Ok(false)) {
@@ -229,7 +237,7 @@ async fn retain_interface(
 
 fn is_current_window(app: &tauri::AppHandle, window: &tauri::Window) -> bool {
     match (
-        app.get_window("main")
+        app.get_webview_window("main")
             .and_then(|current| current.hwnd().ok()),
         window.hwnd().ok(),
     ) {
@@ -304,7 +312,10 @@ fn show_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         let view = app.state::<Host>().next_view.lock().unwrap().clone();
         app.emit("navigate", view)?;
     } else {
-        tauri::WebviewWindowBuilder::from_config(&app, &app.config().app.windows[0])?.build()?;
+        app.state::<Host>()
+            .retention_sequence
+            .store(0, Ordering::Release);
+        tauri::WebviewWindowBuilder::from_config(app, &app.config().app.windows[0])?.build()?;
         // The new frontend reads interface_context after mounting.
     }
     Ok(())
@@ -356,6 +367,7 @@ fn main() {
                 stop: Arc::new(AtomicBool::new(false)),
                 monitor_error: Arc::new(Mutex::new(None)),
                 retain_window: Arc::new(AtomicBool::new(false)),
+                retention_sequence: Arc::new(AtomicU64::new(0)),
                 window_transition: Arc::new(Mutex::new(())),
                 destroyed: Arc::new((Mutex::new(0), Condvar::new())),
                 next_view: Arc::new(Mutex::new("connection".into())),

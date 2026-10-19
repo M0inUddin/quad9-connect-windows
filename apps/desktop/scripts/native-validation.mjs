@@ -97,6 +97,11 @@ try {
             violations: result.violations,
           });
           expect(result.violations, `${theme} ${view}`).toEqual([]);
+          if (view === "Connection")
+            await page.screenshot({
+              path: join(output, `native-connection-${theme.toLowerCase()}.png`),
+              fullPage: true,
+            });
         }
       }
       await page.emulateMedia({
@@ -159,6 +164,18 @@ try {
       await page.evaluate(() =>
         window.__TAURI_INTERNALS__.invoke("retain_interface", { retain: true }),
       );
+      // Async native workers can acquire their lock out of invocation order.
+      // An older idle message must not release a newer busy retention.
+      await page.evaluate(async () => {
+        await window.__TAURI_INTERNALS__.invoke("retain_interface", {
+          retain: true,
+          sequence: 2,
+        });
+        await window.__TAURI_INTERNALS__.invoke("retain_interface", {
+          retain: false,
+          sequence: 1,
+        });
+      });
       await page.evaluate(() => {
         window.quad9RetentionMarker = "same-document";
       });
@@ -194,6 +211,7 @@ try {
       ).toBeVisible();
       report.lifecycle = {
         retained_window_survived_close: true,
+        stale_retention_release_ignored: true,
         idle_window_destroyed: true,
         single_instance_reopen: true,
         preferences_preserved: true,
