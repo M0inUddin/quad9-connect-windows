@@ -49,7 +49,7 @@ function Assert-HostBaseline {
     param($Plan)
     foreach ($family in $Plan.families) {
         $actual = [Quad9Validation.DnsApi]::Read([guid]$Plan.adapter_id, [bool]$family.ipv6)
-        if ((Get-HostDnsSignature $actual) -ne (Get-HostDnsSignature $family.snapshot)) { throw 'Native baseline comparison failed.' }
+        if ((Get-HostDnsSignature $actual) -cne (Get-HostDnsSignature $family.snapshot)) { throw 'Native baseline comparison failed.' }
     }
 }
 function Remove-HostTestInstallation {
@@ -215,7 +215,7 @@ try {
         try {
             [Quad9Validation.DnsApi]::Write($AdapterId, $family.ipv6, $family.applied.NameServer, (ConvertTo-DohValues @($family.applied.Properties)))
             $actual = [Quad9Validation.DnsApi]::Read($AdapterId, $family.ipv6)
-            if ((Get-HostDnsSignature $actual) -ne (Get-HostDnsSignature $family.applied)) { throw 'Strict DoH readback did not match.' }
+            if ((Get-HostDnsSignature $actual) -cne (Get-HostDnsSignature $family.applied)) { throw 'Strict DoH readback did not match.' }
         } finally {
             $restored = Restore-HostDnsBaseline $plan
             if (-not $restored.Complete) { throw ($restored.Issues -join ' ') }
@@ -238,7 +238,7 @@ try {
     $enabled = Invoke-HostRequest $enable
     if ($enabled.result.type -ne 'enabled') { throw ("Service enable failed: " + ($enabled.result | ConvertTo-Json -Compress)) }
     foreach ($family in $families) {
-        if ((Get-HostDnsSignature ([Quad9Validation.DnsApi]::Read($AdapterId, $family.ipv6))) -ne (Get-HostDnsSignature $family.applied)) { throw 'Service strict DoH readback did not match.' }
+        if ((Get-HostDnsSignature ([Quad9Validation.DnsApi]::Read($AdapterId, $family.ipv6))) -cne (Get-HostDnsSignature $family.applied)) { throw 'Service strict DoH readback did not match.' }
     }
     $record.stage = 'restart_while_active'
     Restart-Service -Name Quad9Connect

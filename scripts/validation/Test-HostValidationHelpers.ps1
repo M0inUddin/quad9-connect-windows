@@ -38,6 +38,11 @@ if ($result.Complete -or $writes.Count -ne 0) { throw 'Failed readback must neve
 $values.False = New-HostQuad9Snapshot $false
 $result = Restore-HostDnsBaseline $plan -Read $read -Write { }
 if ($result.Complete) { throw 'A write without matching readback must not count as restored.' }
+$writes.Clear()
+$values.False = New-HostQuad9Snapshot $false
+$values.False.Properties[0].Template = 'https://dns.quad9.net/DNS-query'
+$result = Restore-HostDnsBaseline $plan -Read $read -Write $write
+if ($result.Complete -or $writes.Count -ne 0) { throw 'A case-sensitive DoH path change must be preserved as an external edit.' }
 Write-Output 'Host recovery helper tests passed: unchanged baseline, both families, external conflict, unavailable readback, and ineffective write.'
 
 $started = [DateTime]::UtcNow

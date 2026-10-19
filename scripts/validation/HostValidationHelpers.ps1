@@ -61,12 +61,12 @@ function Restore-HostDnsBaseline {
             $current = & $Read $Plan.adapter_id ([bool]$family.ipv6)
             $signature = Get-HostDnsSignature $current
             $baseline = Get-HostDnsSignature $family.snapshot
-            if ($signature -eq $baseline) { continue }
-            if ($signature -ne (Get-HostDnsSignature $family.applied)) {
+            if ($signature -ceq $baseline) { continue }
+            if ($signature -cne (Get-HostDnsSignature $family.applied)) {
                 throw 'Settings changed outside this test; preserve them for inspection.'
             }
             & $Write $Plan.adapter_id ([bool]$family.ipv6) $family.snapshot | Out-Null
-            if ((Get-HostDnsSignature (& $Read $Plan.adapter_id ([bool]$family.ipv6))) -ne $baseline) {
+            if ((Get-HostDnsSignature (& $Read $Plan.adapter_id ([bool]$family.ipv6))) -cne $baseline) {
                 throw 'Baseline readback did not match after restoration.'
             }
         } catch {
