@@ -201,8 +201,14 @@ mod tests {
         for _ in 0..3 {
             let generation = Arc::new(AtomicU64::new(0));
             let watcher = NetworkWatcher::register(generation.clone(), true).unwrap();
-            assert!(watcher.wait(Duration::from_secs(5)).unwrap());
-            assert!(generation.load(Ordering::SeqCst) > 0);
+            // Startup contributes one mark; all three requested initial IP
+            // callbacks must contribute too, even if their wakeups coalesce.
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while generation.load(Ordering::SeqCst) < 4 {
+                assert!(watcher
+                    .wait(deadline.saturating_duration_since(std::time::Instant::now()))
+                    .unwrap());
+            }
             drop(watcher);
             let after = generation.load(Ordering::SeqCst);
             std::thread::sleep(Duration::from_millis(20));
