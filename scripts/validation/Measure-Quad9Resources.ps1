@@ -3,8 +3,8 @@ param(
     [int] $HostProcessId = 0,
     [switch] $DesktopOnly,
     [ValidateSet('service', 'window', 'tray')][string] $Mode = 'service',
-    [ValidateRange(300, 3600)][int] $DurationSeconds = 300,
-    [ValidateRange(10, 300)][int] $SettleSeconds = 30,
+    [ValidateRange(1, 3600)][int] $DurationSeconds = 300,
+    [ValidateRange(0, 300)][int] $SettleSeconds = 30,
     [Parameter(Mandatory)][string] $OutputPath
 )
 Set-StrictMode -Version Latest
@@ -13,6 +13,7 @@ $service = Get-CimInstance Win32_Service -Filter "Name='Quad9Connect'"
 if ($DesktopOnly -and ($Mode -eq 'service' -or $HostProcessId -le 0)) { throw 'Desktop-only sampling requires window/tray mode and the desktop PID.' }
 if (-not $DesktopOnly -and (-not $service -or $service.State -ne 'Running')) { throw 'The installed Quad9 service must be running.' }
 if ($Mode -ne 'service' -and $HostProcessId -le 0) { throw 'Window/tray measurements require the desktop PID.' }
+if ($Mode -eq 'service' -and $HostProcessId -ne 0) { throw 'Service-only sampling cannot include a desktop PID.' }
 $roots = @()
 $serviceId = 0
 if (-not $DesktopOnly) { $serviceId = [int]$service.ProcessId; $roots += $serviceId }
@@ -20,7 +21,9 @@ if ($HostProcessId -gt 0) { $roots += $HostProcessId }
 $identities = @{}
 foreach ($rootId in $roots) {
     $p = Get-CimInstance Win32_Process -Filter "ProcessId=$rootId"
-    if (-not $p -or $p.Name -notin @('quad9-service.exe', 'quad9-desktop.exe')) { throw 'Unexpected measurement root.' }
+    $expectedName = if ($rootId -eq $serviceId) { 'quad9-service.exe' } else { 'quad9-desktop.exe' }
+    if (-not $p -or $p.Name -ine $expectedName) { throw 'Unexpected measurement root.' }
+    if ($HostProcessId -gt 0 -and $HostProcessId -eq $serviceId) { throw 'The desktop PID cannot be the service PID.' }
     $identities[$rootId] = $p.CreationDate
 }
 Write-Output "Settling $Mode for $SettleSeconds seconds; then sampling for $DurationSeconds seconds."
@@ -58,25 +61,28 @@ do {
     }
     if ($samples.Count -gt 0 -and @($previousKeys | Where-Object { $_ -notin $keys }).Count) { $churn = $true }
     $previousKeys = $keys
-    $samples.Add([ordered]@{ seconds = $clock.Elapsed.TotalSeconds; working_set_bytes = $memory; service_working_set_bytes = $serviceMemory; processes = $selected.Count; webviews = @($selected | Where-Object Name -eq 'msedgewebview2.exe').Count })
-    if ($clock.Elapsed.TotalSeconds -lt $DurationSeconds) { Start-Sleep -Milliseconds 2000 }
-} while ($clock.Elapsed.TotalSeconds -lt $DurationSeconds)
+    $samples.Add([pscustomobject][ordered]@{ seconds = $clock.Elapsed.TotalSeconds; working_set_bytes = $memory; service_working_set_bytes = $serviceMemory; processes = $selected.Count; webviews = @($selected | Where-Object Name -eq 'msedgewebview2.exe').Count })
+    $interval = $samples[-1].seconds - $samples[0].seconds
+    if ($interval -lt $DurationSeconds) { Start-Sleep -Milliseconds 2000 }
+} while ($interval -lt $DurationSeconds)
 $elapsed = $samples[-1].seconds - $samples[0].seconds
 $cpuTicks = [uint64]0
 foreach ($key in $cpuLast.Keys) { $cpuTicks += $cpuLast[$key] - $cpuStart[$key] }
 $cpuPercent = ($cpuTicks / 10000000.0) / $elapsed * 100
 $maxMiB = ($samples | Measure-Object working_set_bytes -Maximum).Maximum / 1MB
+$complete = -not $DesktopOnly -and $elapsed -ge 300 -and $SettleSeconds -ge 30
 $limit = switch ($Mode) { 'service' { 40 }; 'window' { 250 }; 'tray' { 100 } }
 $report = [ordered]@{
     schema = 1; mode = $Mode; measured_seconds = $elapsed; settle_seconds = $SettleSeconds
     complete_process_set = (-not $DesktopOnly)
+    five_minute_interval = ($elapsed -ge 300)
     cpu_percent_one_logical_core = $cpuPercent; process_exits_observed = $churn
     average_working_set_mib = ($samples | Measure-Object working_set_bytes -Average).Average / 1MB
     maximum_working_set_mib = $maxMiB
     maximum_service_working_set_mib = ($samples | Measure-Object service_working_set_bytes -Maximum).Maximum / 1MB
-    cpu_target_pass = $(if (-not $DesktopOnly) { -not $churn -and $cpuPercent -lt 0.5 } else { $null })
-    memory_target_pass = $(if (-not $DesktopOnly -or $maxMiB -gt $limit) { $maxMiB -le $limit } else { $null })
-    service_memory_target_pass = $(if (-not $DesktopOnly) { ($samples | Measure-Object service_working_set_bytes -Maximum).Maximum -le 40MB } else { $null })
+    cpu_target_pass = $(if ($complete -and -not $churn) { $cpuPercent -lt 0.5 } else { $null })
+    memory_target_pass = $(if ($complete) { $maxMiB -le $limit } else { $null })
+    service_memory_target_pass = $(if ($complete) { ($samples | Measure-Object service_working_set_bytes -Maximum).Maximum -le 40MB } else { $null })
     window_or_tray_state = 'Caller establishes the native window state; counters do not infer visibility.'
     attribution = 'Installed service PID, desktop PID when supplied, and recursive descendants; includes shared resident pages in each process working set.'
     samples = $samples.ToArray()

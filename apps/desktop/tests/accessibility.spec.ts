@@ -76,7 +76,9 @@ test("200 percent content zoom reflows every screen without clipped controls", a
   for (const view of ["Connection", "Diagnostics", "Settings"]) {
     await page.getByRole("button", { name: view, exact: true }).click();
     const clipped = await page
-      .locator("button,input,h1,h2,h3,legend:not(.sr-only),.profile-details strong")
+      .locator(
+        "button,input,h1,h2,h3,legend:not(.sr-only),.profile-details strong",
+      )
       .evaluateAll((elements) =>
         elements
           .filter((el) => {
@@ -115,4 +117,29 @@ test("slow diagnostics leave navigation and theme controls responsive", async ({
   await expect(page.getByRole("status")).toHaveText(
     "Diagnostic complete. DNS over HTTPS observed",
   );
+});
+
+test("a failed diagnostic cannot announce an earlier success", async ({
+  page,
+}) => {
+  await page.goto("/?preview=failed-probe");
+  await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Run diagnostics", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toHaveText(
+    "Diagnostic complete. DNS over HTTPS observed",
+  );
+  await page
+    .getByRole("button", { name: "Run diagnostics", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText(
+    "The resolver check timed out.",
+  );
+  await expect(page.getByRole("status")).not.toContainText(
+    "Diagnostic complete",
+  );
+  await expect(
+    page.getByText("DNS over HTTPS observed", { exact: true }),
+  ).toHaveCount(0);
 });

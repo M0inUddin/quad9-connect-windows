@@ -1,9 +1,9 @@
+import { freePort, connect, reopen, closeWindow } from "./native-session.mjs";
 // Real embedded assets, Rust IPC, and native close/reopen. Never sends a DNS mutation.
-import { chromium, expect } from "@playwright/test";
+import { expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, writeFile, readFile } from "node:fs/promises";
-import { createServer } from "node:net";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createHash } from "node:crypto";
@@ -34,76 +34,6 @@ const report = {
   lifecycle: {},
 };
 
-async function freePort() {
-  const server = createServer();
-  await new Promise((ok, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", ok);
-  });
-  const port = server.address().port;
-  await new Promise((ok) => server.close(ok));
-  return port;
-}
-async function connect(port, child) {
-  const deadline = Date.now() + 30000;
-  let browser;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null)
-      throw new Error(
-        `Desktop process exited ${child.exitCode}. Close any other Quad9 interface before testing.`,
-      );
-    try {
-      browser ??= await chromium.connectOverCDP(`http://127.0.0.1:${port}`, {
-        timeout: 500,
-      });
-      const page = browser
-        .contexts()
-        .flatMap((c) => c.pages())
-        .find((p) => /tauri[.:]/.test(p.url()));
-      if (page) {
-        page.setDefaultTimeout(10000);
-        await page
-          .getByRole("status")
-          .filter({ hasText: /Service unavailable|Ready when you are/ })
-          .waitFor({ state: "attached" });
-        return { browser, page };
-      }
-    } catch {
-      await browser?.close().catch(() => {});
-      browser = undefined;
-    }
-    await delay(50);
-  }
-  throw new Error("Native startup exceeded 30 seconds.");
-}
-async function reopen(port, child) {
-  const second = spawn(executable, [], { windowsHide: true, stdio: "ignore" });
-  await new Promise((ok, reject) => {
-    const timer = setTimeout(() => {
-      second.kill();
-      reject(
-        new Error("Second launch did not attach to the existing tray host."),
-      );
-    }, 10000);
-    second.once("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    second.once("exit", (code) => {
-      clearTimeout(timer);
-      code === 0 ? ok() : reject(new Error(`Second launch exited ${code}`));
-    });
-  });
-  return connect(port, child);
-}
-async function closeWindow(page) {
-  const closed = page.waitForEvent("close", { timeout: 10000 });
-  await page.keyboard.press("Control+w").catch((error) => {
-    if (!page.isClosed()) throw error;
-  });
-  await closed;
-}
-
 try {
   for (let run = 0; run < runs; run++) {
     const profile = await mkdtemp(join(output, "profile-"));
@@ -129,6 +59,10 @@ try {
       let page = session.page;
       if (spawnError) throw spawnError;
       const elapsed = performance.now() - start;
+      report.connection_state = await page.getByRole("status").textContent();
+      report.device_pixel_ratio = await page.evaluate(() => devicePixelRatio);
+      if (process.argv.includes("--require-service"))
+        await expect(page.getByRole("status")).toHaveText("Ready when you are");
       report.webview_version ??= browser.version();
       report.startup.push(elapsed);
       console.log(
@@ -232,7 +166,7 @@ try {
       await delay(300);
       expect(page.isClosed()).toBe(false);
       await browser.close();
-      ({ browser, page } = await reopen(port, child));
+      ({ browser, page } = await reopen(executable, port, child));
       // Playwright wrappers change across reconnect; the retained document keeps its runtime marker.
       expect(
         await page.evaluate(() => document.documentElement.dataset.theme),
@@ -248,7 +182,7 @@ try {
       await closeWindow(page);
       expect(child.exitCode).toBe(null);
       await browser.close();
-      ({ browser, page } = await reopen(port, child));
+      ({ browser, page } = await reopen(executable, port, child));
       await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
       expect(
         await page.evaluate(() => window.quad9RetentionMarker),
@@ -283,7 +217,7 @@ try {
     ? sorted[Math.ceil(sorted.length * 0.95) - 1]
     : null;
   report.startup_target_pass =
-    sorted.length >= 20 && report.startup_p95_ms <= 3000;
+    sorted.length >= 20 ? report.startup_p95_ms <= 3000 : null;
   report.method =
     "Process-cold starts with a new WebView profile each run. OS caches and other running apps are unchanged. CDP readiness observation adds overhead. Resource measurements run separately without CDP or accessibility instrumentation.";
   await writeFile(

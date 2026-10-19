@@ -304,6 +304,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
     // Only the explicit Retry action may replay an uncertain mutation. A
     // read-only action must send its own command and leave that receipt pending.
     const request = command ? makeRequest(command) : retry.current;
+    if (request?.command.type === "run_diagnostics") setProbe(null);
     setBusy(
       request?.command.type === "run_diagnostics"
         ? "Checking the system resolver"
