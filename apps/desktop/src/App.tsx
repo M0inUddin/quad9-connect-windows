@@ -386,7 +386,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
             <div>
               <strong>Automatic DNS checks are unavailable</strong>
               <p>
-                Reopen the app to restart monitoring. Manual checks and
+                Quit and reopen the app to restart monitoring. Manual checks and
                 restoration remain available.
               </p>
             </div>
