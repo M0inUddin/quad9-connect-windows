@@ -116,3 +116,29 @@ try {
     if (Test-Path -LiteralPath $fixture) { [IO.Directory]::Delete($fixture, $false) }
 }
 Write-Output 'Partial install cleanup tests passed: recorded binary removed, unrelated file preserved, and unknown replacement refused.'
+
+$staging = Join-Path ([IO.Path]::GetTempPath()) ('Quad9HostStaging-' + [guid]::NewGuid().ToString('N'))
+$stagedPaths = @('scripts\Install-DevelopmentService.ps1', 'scripts\Uninstall-DevelopmentService.ps1', 'scripts\Use-ServiceSystemModules.ps1', 'installer\windows\InstallerLifecycle.psm1')
+[IO.Directory]::CreateDirectory($staging) | Out-Null
+$stagedModule = $null
+try {
+    Copy-HostServiceScripts -ScriptsDirectory (Join-Path $PSScriptRoot '..') -RunDirectory $staging
+    foreach ($relative in $stagedPaths) {
+        $source = Join-Path $PSScriptRoot "..\..\$relative"
+        if ((Get-FileHash -LiteralPath (Join-Path $staging $relative)).Hash -ne (Get-FileHash -LiteralPath $source).Hash) { throw 'A staged service dependency is missing or differs from its source.' }
+    }
+    $stagedModule = Import-Module (Join-Path $staging 'scripts\..\installer\windows\InstallerLifecycle.psm1') -PassThru -Force
+    if (-not (Get-Command Invoke-Quad9Lifecycle -Module $stagedModule.Name)) { throw 'Staged recovery could not load its lifecycle module.' }
+    $refused = $false
+    try { Copy-HostServiceScripts -ScriptsDirectory (Join-Path $PSScriptRoot '..') -RunDirectory $staging } catch { $refused = $true }
+    if (-not $refused) { throw 'Host staging must not overwrite an existing dependency directory.' }
+} finally {
+    if ($null -ne $stagedModule) { Remove-Module $stagedModule -Force }
+    foreach ($relative in $stagedPaths) { [IO.File]::Delete((Join-Path $staging $relative)) }
+    foreach ($relative in @('scripts', 'installer\windows', 'installer')) {
+        $directory = Join-Path $staging $relative
+        if ([IO.Directory]::Exists($directory)) { [IO.Directory]::Delete($directory, $false) }
+    }
+    [IO.Directory]::Delete($staging, $false)
+}
+Write-Output 'Host staging passed: install, uninstall, module discovery and lifecycle dependencies remain inside the staged run; existing directories are refused.'
