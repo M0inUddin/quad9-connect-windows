@@ -159,10 +159,29 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   }, [send]);
 
   const invalidate = useCallback(() => {
-    observationEpoch.current++;
+    const epoch = ++observationEpoch.current;
     setProbe(null);
-    if (lock.current) refreshPending.current = true;
-    else if (!document.hidden) refresh().catch(() => setStatus(null));
+    if (lock.current) {
+      refreshPending.current = true;
+      return;
+    }
+    const refreshVisible = (visible: boolean) => {
+      // Native hide does not reliably update WebView2's document.hidden. Keep
+      // invalidating evidence while a retained window is hidden, but defer its
+      // redundant service reads until it reopens. A newer event or action can
+      // overtake the asynchronous native visibility response.
+      if (!visible || epoch !== observationEpoch.current) return;
+      if (lock.current) refreshPending.current = true;
+      else
+        void refresh().catch(() => {
+          if (epoch === observationEpoch.current) setStatus(null);
+        });
+    };
+    if (isTauri())
+      void getCurrentWindow()
+        .isVisible()
+        .then(refreshVisible, () => refreshVisible(true));
+    else refreshVisible(!document.hidden);
   }, [refresh]);
   useEffect(() => {
     try {
@@ -195,6 +214,9 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
           navigationPending.current = true;
           return;
         }
+        // Showing an already focused retained window need not deliver another
+        // browser focus event. Read fresh state on every native reopen.
+        invalidate();
         // Consume the saved tray receipt in an existing window too, so it
         // cannot reappear as a stale error after a later window recreation.
         void invoke<InterfaceContext>("interface_context")

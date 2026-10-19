@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "date": "2026-10-19",
+  "host_record": "windows11-26300-performance-accessibility.json",
+  "product": "Cloudflare One Client / WARP",
+  "version": "2026.8.2110.0",
+  "connection_state": "Disconnected, manual disconnection",
+  "method": "Read-only Windows process counters. Named WARP service, UI and recursive descendants; shared resident pages counted separately for every process. CPU is a percentage of one logical CPU. The GUI was launched without connecting or changing settings. The existing WARP service remained running throughout.",
+  "open_window": {
+    "settle_seconds": 30,
+    "measured_seconds": 302.2974154,
+    "processes": 2,
+    "maximum_working_set_mib": 376.4453125,
+    "average_working_set_mib": 374.8246203271028,
+    "maximum_service_working_set_mib": 63.63671875,
+    "maximum_ui_working_set_mib": 312.82421875,
+    "cpu_percent_one_logical_core": 4.3055693952188525,
+    "process_exits_observed": false,
+    "conditions": "Disconnected Home screen visible, no user input. Rust compilation was stopped before this interval. Other normal host applications remained running."
+  },
+  "background_service_only": {
+    "settle_seconds": 30,
+    "measured_seconds": 302.0641241,
+    "maximum_working_set_mib": 62.7421875,
+    "cpu_percent_one_logical_core": 0.9517846611430807,
+    "caveat": "Toolchain downloads and Rust compilation ran during part of this interval. This is an observation under development workload, not a controlled idle comparison."
+  },
+  "closed_window_snapshot": {
+    "maximum_working_set_mib": null,
+    "snapshot_working_set_mib": 364.6796875,
+    "ui_working_set_mib": 301.0078125,
+    "service_working_set_mib": 63.671875,
+    "caveat": "One snapshot after closing the window, not a five-minute interval or CPU measurement. The UI process remained alive and hidden."
+  },
+  "comparison_limits": [
+    "WARP includes its service. Quad9's earlier 394.00 MiB window and 27.24 MiB tray measurements exclude its separately measured service.",
+    "The applications provide different networking features and were sampled in separate intervals. These observations are not a controlled product ranking.",
+    "WARP's published device RAM requirements do not describe its process working set."
+  ],
+  "cleanup": {
+    "test_launched_gui_exited": true,
+    "original_warp_service_preserved": true,
+    "warp_still_manually_disconnected": true,
+    "network_settings_changed": false
+  }
+}

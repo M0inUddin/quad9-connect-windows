@@ -1,4 +1,4 @@
-import { freePort, connect, reopen, closeWindow } from "./native-session.mjs";
+import { freePort, connect, reopen, closeWindow, memoryTarget } from "./native-session.mjs";
 // Real embedded assets, Rust IPC, and native close/reopen. Never sends a DNS mutation.
 import { expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
@@ -212,11 +212,59 @@ try {
       await page.evaluate(() => {
         window.quad9RetentionMarker = "same-document";
       });
+      // Observe Windows Tauri's fetch IPC through CDP. Its invoke property is
+      // read-only. Never replace the bridge or collect its authentication headers.
+      let readRequests = 0;
+      let visibilityReplies = 0;
+      const ipcCommand = (request) => {
+        const url = new URL(request.url());
+        return url.hostname === "ipc.localhost" ? decodeURIComponent(url.pathname.slice(1)) : null;
+      };
+      page.on("request", (request) => {
+        if (ipcCommand(request) === "service_request" &&
+            ["get_status", "list_adapters"].includes(request.postDataJSON()?.request?.command?.type))
+          readRequests++;
+      });
+      page.on("requestfinished", (request) => {
+        if (ipcCommand(request) === "plugin:window|is_visible") visibilityReplies++;
+      });
+      // Positive controls prevent an unavailable IPC observation path from
+      // making the later zero-read assertion pass without observing anything.
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      await expect.poll(() => readRequests).toBeGreaterThan(0);
+      await expect.poll(() => visibilityReplies).toBeGreaterThan(0);
       await page.keyboard.press("Control+w");
       await delay(300);
       expect(page.isClosed()).toBe(false);
-      await browser.close();
-      ({ browser, page } = await reopen(executable, port, child));
+      await expect.poll(() => isVisible(page)).toBe(false);
+      // Current Evergreen runtimes expose the hint. Assert the actual COM
+      // property, since working-set reduction itself is only best effort.
+      expect(await memoryTarget(page)).not.toBe(null);
+      await expect.poll(async () => (await memoryTarget(page))?.level).toBe(1);
+      expect((await memoryTarget(page)).visible).toBe(false);
+      report.lifecycle.hidden_memory_target_low = true;
+      const hiddenReads = { reads: readRequests, visibility: visibilityReplies };
+      await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+      await expect.poll(() => visibilityReplies).toBeGreaterThan(hiddenReads.visibility);
+      await delay(100);
+      expect(readRequests).toBe(hiddenReads.reads);
+      const observedBrowser = browser;
+      try {
+        // Keep the observer connected across Open, which can refresh before a
+        // second CDP connection attaches to the retained document.
+        ({ browser, page } = await reopen(executable, port, child));
+        await expect.poll(() => readRequests).toBeGreaterThan(hiddenReads.reads);
+      } finally {
+        await observedBrowser.close().catch(() => {});
+      }
+      report.lifecycle.hidden_event_reads_deferred_until_reopen = true;
+      await expect.poll(async () => {
+        const target = await memoryTarget(page);
+        return target && (!target.foreground || target.level === 0);
+      }).toBe(true);
+      const reopenedMemory = await memoryTarget(page);
+      report.lifecycle.foreground_memory_target_normal = reopenedMemory.foreground
+        ? reopenedMemory.level === 0 : null;
       // Playwright wrappers change across reconnect; the retained document keeps its runtime marker.
       expect(
         await page.evaluate(() => document.documentElement.dataset.theme),
@@ -243,6 +291,7 @@ try {
         }),
       ).toBeVisible();
       report.lifecycle = {
+        ...report.lifecycle,
         retained_window_survived_close: true,
         stale_retention_release_ignored: true,
         idle_window_destroyed: true,

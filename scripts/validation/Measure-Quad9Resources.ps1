@@ -2,6 +2,7 @@
 param(
     [int] $HostProcessId = 0,
     [switch] $DesktopOnly,
+    [switch] $RequireForeground,
     [ValidateSet('service', 'window', 'tray')][string] $Mode = 'service',
     [ValidateRange(1, 3600)][int] $DurationSeconds = 300,
     [ValidateRange(0, 300)][int] $SettleSeconds = 30,
@@ -9,6 +10,22 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if ($RequireForeground -and ($Mode -ne 'window' -or $HostProcessId -le 0)) { throw 'Foreground validation requires a desktop window measurement.' }
+if (-not ('Quad9ResourceForeground' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class Quad9ResourceForeground {
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+    public static uint ProcessId() {
+        uint processId;
+        GetWindowThreadProcessId(GetForegroundWindow(), out processId);
+        return processId;
+    }
+}
+'@
+}
 $service = Get-CimInstance Win32_Service -Filter "Name='Quad9Connect'"
 if ($DesktopOnly -and ($Mode -eq 'service' -or $HostProcessId -le 0)) { throw 'Desktop-only sampling requires window/tray mode and the desktop PID.' }
 if (-not $DesktopOnly -and (-not $service -or $service.State -ne 'Running')) { throw 'The installed Quad9 service must be running.' }
@@ -61,7 +78,7 @@ do {
     }
     if ($samples.Count -gt 0 -and @($previousKeys | Where-Object { $_ -notin $keys }).Count) { $churn = $true }
     $previousKeys = $keys
-    $samples.Add([pscustomobject][ordered]@{ seconds = $clock.Elapsed.TotalSeconds; working_set_bytes = $memory; service_working_set_bytes = $serviceMemory; processes = $selected.Count; webviews = @($selected | Where-Object Name -eq 'msedgewebview2.exe').Count })
+    $samples.Add([pscustomobject][ordered]@{ seconds = $clock.Elapsed.TotalSeconds; working_set_bytes = $memory; service_working_set_bytes = $serviceMemory; processes = $selected.Count; webviews = @($selected | Where-Object Name -eq 'msedgewebview2.exe').Count; host_foreground = ($HostProcessId -gt 0 -and [Quad9ResourceForeground]::ProcessId() -eq $HostProcessId) })
     $interval = $samples[-1].seconds - $samples[0].seconds
     if ($interval -lt $DurationSeconds) { Start-Sleep -Milliseconds 2000 }
 } while ($interval -lt $DurationSeconds)
@@ -70,12 +87,14 @@ $cpuTicks = [uint64]0
 foreach ($key in $cpuLast.Keys) { $cpuTicks += $cpuLast[$key] - $cpuStart[$key] }
 $cpuPercent = ($cpuTicks / 10000000.0) / $elapsed * 100
 $maxMiB = ($samples | Measure-Object working_set_bytes -Maximum).Maximum / 1MB
-$complete = -not $DesktopOnly -and $elapsed -ge 300 -and $SettleSeconds -ge 30
+$foregroundThroughout = @($samples | Where-Object { -not $_.host_foreground }).Count -eq 0
+$complete = -not $DesktopOnly -and $elapsed -ge 300 -and $SettleSeconds -ge 30 -and (-not $RequireForeground -or $foregroundThroughout)
 $limit = switch ($Mode) { 'service' { 40 }; 'window' { 250 }; 'tray' { 100 } }
 $report = [ordered]@{
     schema = 1; mode = $Mode; measured_seconds = $elapsed; settle_seconds = $SettleSeconds
     complete_process_set = (-not $DesktopOnly)
     five_minute_interval = ($elapsed -ge 300)
+    foreground_required = [bool]$RequireForeground; host_foreground_throughout = $foregroundThroughout
     cpu_percent_one_logical_core = $cpuPercent; process_exits_observed = $churn
     average_working_set_mib = ($samples | Measure-Object working_set_bytes -Average).Average / 1MB
     maximum_working_set_mib = $maxMiB

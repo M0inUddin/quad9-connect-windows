@@ -242,6 +242,7 @@ for (const failureSource of ["event", "saved"] as const) {
       Object.assign(window, {
         isTauri: true,
         __TAURI_INTERNALS__: {
+          metadata: { currentWindow: { label: "main" } },
           transformCallback(callback: (event: unknown) => void) {
             callbacks.set(++next, callback);
             return next;
@@ -257,6 +258,7 @@ for (const failureSource of ["event", "saved"] as const) {
               return args.handler;
             }
             if (command === "plugin:event|unlisten") return null;
+            if (command === "plugin:window|is_visible") return true;
             if (command === "interface_context")
               return { view: "connection", tray_result: null };
             if (command === "retain_interface") return null;
