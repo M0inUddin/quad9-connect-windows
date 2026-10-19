@@ -97,6 +97,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   const retry = useRef<Request | null>(null);
   const observationEpoch = useRef(0);
   const nativeGeneration = useRef(0);
+  const refreshPending = useRef(false);
   const state = connectionState(status);
   const owned =
     state === "configured" || state === "conflict" || state === "recovery";
@@ -142,8 +143,8 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   const invalidate = useCallback(() => {
     observationEpoch.current++;
     setProbe(null);
-    if (!document.hidden && !lock.current)
-      refresh().catch(() => setStatus(null));
+    if (lock.current) refreshPending.current = true;
+    else if (!document.hidden) refresh().catch(() => setStatus(null));
   }, [refresh]);
 
   useEffect(() => {
@@ -308,6 +309,16 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
       setStatus(null);
     } finally {
       lock.current = false;
+      if (refreshPending.current) {
+        refreshPending.current = false;
+        // An event may have invalidated the final post-action read. Unlock first
+        // so any event during this replacement read can schedule its own read.
+        try {
+          await refresh();
+        } catch {
+          setStatus(null);
+        }
+      }
       setBusy(null);
     }
   }

@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+use quad9_service::client::{ClientCoordinator, ObservedResponse};
 use quad9_service::protocol::{Command, Request, Response, ResultBody};
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -12,10 +13,9 @@ use tauri::{
 
 #[derive(Clone)]
 struct Host {
-    gate: Arc<Mutex<()>>,
+    requests: Arc<ClientCoordinator>,
     restore: MenuItem<tauri::Wry>,
     status: MenuItem<tauri::Wry>,
-    generation: Arc<AtomicU64>,
     stop: Arc<AtomicBool>,
     monitor_error: Arc<Mutex<Option<String>>>,
 }
@@ -72,24 +72,24 @@ fn observe_network(app: tauri::AppHandle) -> std::io::Result<()> {
     std::thread::Builder::new()
         .name("quad9-network-observer".into())
         .spawn(move || {
-            let watcher =
-                match quad9_native::network::NetworkWatcher::start(host.generation.clone()) {
-                    Ok(watcher) => watcher,
-                    Err(error) => {
-                        eprintln!("Network notifications unavailable: {error}");
-                        if let Ok(mut saved) = host.monitor_error.lock() {
-                            *saved = Some(error.to_string());
-                        }
-                        let _ = app.emit("network-monitor-error", error.to_string());
-                        return;
+            let generation = host.requests.generation.clone();
+            let watcher = match quad9_native::network::NetworkWatcher::start(generation.clone()) {
+                Ok(watcher) => watcher,
+                Err(error) => {
+                    eprintln!("Network notifications unavailable: {error}");
+                    if let Ok(mut saved) = host.monitor_error.lock() {
+                        *saved = Some(error.to_string());
                     }
-                };
+                    let _ = app.emit("network-monitor-error", error.to_string());
+                    return;
+                }
+            };
             while !host.stop.load(Ordering::Acquire) {
                 if !watcher.wait(std::time::Duration::from_millis(250)) {
                     continue;
                 }
                 unknown_tray(&app, "Network changed; checking DNS");
-                let _ = app.emit("network-changed", host.generation.load(Ordering::SeqCst));
+                let _ = app.emit("network-changed", generation.load(Ordering::SeqCst));
                 // A burst gets one read after 250 ms quiet, or after two seconds at
                 // most. The wait consumes notifications, never polls adapter state.
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
@@ -106,19 +106,17 @@ fn observe_network(app: tauri::AppHandle) -> std::io::Result<()> {
                 }
                 // Refresh once more after the burst so a read started at the
                 // first signal cannot leave a view of an intermediate network.
-                let _ = app.emit("network-changed", host.generation.load(Ordering::SeqCst));
-                let Ok(_guard) = host.gate.lock() else {
-                    break;
-                };
-                let generation = host.generation.load(Ordering::SeqCst);
-                let response = quad9_service::host::send(&request(Command::GetStatus));
-                if generation == host.generation.load(Ordering::SeqCst) {
-                    match response {
-                        Ok(response) if matches!(response.result, ResultBody::Status { .. }) => {
-                            update_tray(&app, &response)
-                        }
-                        _ => unknown_tray(&app, "Service unavailable"),
+                let _ = app.emit("network-changed", generation.load(Ordering::SeqCst));
+                match host
+                    .requests
+                    .execute(&request(Command::GetStatus), quad9_service::host::send)
+                {
+                    Ok(observed)
+                        if matches!(observed.response.result, ResultBody::Status { .. }) =>
+                    {
+                        update_tray(&app, &observed.response)
                     }
+                    _ => unknown_tray(&app, "Service unavailable"),
                 }
             }
         })
@@ -136,33 +134,30 @@ fn network_monitor_error(app: tauri::AppHandle) -> Option<String> {
 
 #[tauri::command]
 async fn service_request(app: tauri::AppHandle, request: Request) -> Result<Response, String> {
-    request.validate()?;
-    let gate = app.state::<Host>().gate.clone();
-    let generation = app.state::<Host>().generation.clone();
+    observed_service_request(app, request)
+        .await
+        .map(|observed| observed.response)
+}
+
+async fn observed_service_request(
+    app: tauri::AppHandle,
+    request: Request,
+) -> Result<ObservedResponse, String> {
+    let requests = app.state::<Host>().requests.clone();
     let status_request = matches!(request.command, Command::GetStatus);
-    let observation = matches!(
-        request.command,
-        Command::GetStatus | Command::ListAdapters | Command::RunDiagnostics
-    );
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let _guard = gate
-            .lock()
-            .map_err(|_| "The request coordinator is unavailable".to_owned())?;
-        let before = generation.load(Ordering::SeqCst);
-        let result = quad9_service::host::send(&request);
-        if observation && before != generation.load(Ordering::SeqCst) {
-            return Err("The network changed during this check. Read current state and run diagnostics again.".into());
-        }
-        result
+        requests.execute(&request, quad9_service::host::send)
     })
     .await
     .map_err(|e| e.to_string())
     .and_then(|result| result);
     match &result {
-        Ok(response) if status_request && !matches!(response.result, ResultBody::Status { .. }) => {
+        Ok(observed)
+            if status_request && !matches!(observed.response.result, ResultBody::Status { .. }) =>
+        {
             unknown_tray(&app, "Service unavailable")
         }
-        Ok(response) => update_tray(&app, response),
+        Ok(observed) => update_tray(&app, &observed.response),
         Err(_) => unknown_tray(&app, "Service unavailable"),
     }
     result
@@ -214,10 +209,9 @@ fn main() {
                 ],
             )?;
             app.manage(Host {
-                gate: Arc::new(Mutex::new(())),
+                requests: Arc::new(ClientCoordinator::default()),
                 restore,
                 status,
-                generation: Arc::new(AtomicU64::new(0)),
                 stop: Arc::new(AtomicBool::new(false)),
                 monitor_error: Arc::new(Mutex::new(None)),
             });
@@ -247,17 +241,20 @@ fn main() {
                         show(app, "diagnostics");
                         let app = app.clone();
                         tauri::async_runtime::spawn(async move {
-                            let generation = app.state::<Host>().generation.load(Ordering::SeqCst);
                             let result =
-                                service_request(app.clone(), request(Command::RunDiagnostics))
+                                observed_service_request(app.clone(), request(Command::RunDiagnostics))
                                     .await;
-                            let _ = app.emit(
-                                "diagnostic-result",
-                                serde_json::json!({
-                                    "generation": generation,
-                                    "result": result,
+                            let payload = match result {
+                                Ok(observed) => serde_json::json!({
+                                    "generation": observed.generation,
+                                    "result": {"Ok": observed.response},
                                 }),
-                            );
+                                Err(error) => serde_json::json!({
+                                    "generation": app.state::<Host>().requests.generation.load(Ordering::SeqCst),
+                                    "result": {"Err": error},
+                                }),
+                            };
+                            let _ = app.emit("diagnostic-result", payload);
                         });
                     }
                     "restore" => {

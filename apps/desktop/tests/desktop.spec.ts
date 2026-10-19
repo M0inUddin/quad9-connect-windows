@@ -135,6 +135,37 @@ test("diagnostics cannot replay or consume an uncertain DNS mutation", async ({
   expect(mutations[0]).toEqual(mutations[1]);
 });
 
+test("an event during the final mutation refresh queues a current state read", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    let changed = false;
+    window.addEventListener("quad9-preview-request", (event) => {
+      const command = (event as CustomEvent<Request>).detail.command.type;
+      if (command === "enable_quad9" || command === "restore_previous_settings")
+        changed = true;
+      else if (command === "get_status" && changed) {
+        changed = false;
+        setTimeout(() => window.dispatchEvent(new Event("online")), 50);
+      }
+    });
+  });
+  await page.goto("/?preview=off");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("checkbox", { name: "IPv4", exact: true }).check();
+  await page.getByRole("button", { name: "Connection", exact: true }).click();
+  await page.getByRole("button", { name: "Enable Quad9", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Quad9 configured" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Turn off and restore DNS", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Ready when you are" }),
+  ).toBeVisible();
+});
+
 test("network events clear an old diagnostic without rewriting DNS", async ({
   page,
 }) => {
