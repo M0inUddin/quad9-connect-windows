@@ -37,6 +37,7 @@ struct FakeDns {
     verify_fails: bool,
     missing: Option<Target>,
     change_during_verify: bool,
+    external_change_on_success: Option<Target>,
 }
 
 impl DnsBackend for FakeDns {
@@ -62,6 +63,14 @@ impl DnsBackend for FakeDns {
         Ok(())
     }
     fn verify_system_doh(&mut self, targets: &[Target]) -> Result<(), CoreError> {
+        if let Some(target) = &self.external_change_on_success {
+            let address = if target.family == AddressFamily::Ipv4 {
+                "192.0.2.99"
+            } else {
+                "2001:db8::99"
+            };
+            self.settings.insert(target.clone(), static_dns(address));
+        }
         if self.change_during_verify {
             self.settings
                 .insert(targets[0].clone(), static_dns("192.0.2.99"));
@@ -157,6 +166,27 @@ fn repeated_enable_keeps_first_snapshot_and_does_not_write() {
     );
     assert_eq!(engine.store.saved, journal);
     assert_eq!(engine.backend.writes, writes);
+}
+
+#[test]
+fn repeated_enable_rechecks_every_target_after_a_successful_probe() {
+    for changed in both() {
+        let mut engine = setup();
+        engine.enable(&both()).unwrap();
+        let journal = engine.store.saved.clone();
+        let writes = engine.backend.writes;
+        engine.backend.external_change_on_success = Some(changed.clone());
+        assert!(matches!(
+            engine.enable(&both()),
+            Err(CoreError::Conflict(_))
+        ));
+        assert_eq!(engine.backend.writes, writes);
+        assert_eq!(engine.store.saved, journal);
+        assert_ne!(
+            engine.backend.settings[&changed],
+            DnsSettings::quad9(changed.family)
+        );
+    }
 }
 
 #[test]

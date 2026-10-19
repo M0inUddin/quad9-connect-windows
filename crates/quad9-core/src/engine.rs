@@ -94,6 +94,13 @@ impl<B: DnsBackend, S: JournalStore> Engine<B, S> {
                         }
                     }
                     self.backend.verify_system_doh(targets)?;
+                    for entry in &journal.entries {
+                        if self.backend.read(&entry.target)? != entry.applied {
+                            return Err(CoreError::Conflict(
+                                "Settings changed during verification".into(),
+                            ));
+                        }
+                    }
                     return Ok(EnableOutcome::AlreadyEnabled);
                 }
                 return Err(CoreError::ActiveTransaction);
