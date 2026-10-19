@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   connectionState,
   eligibleTargets,
@@ -21,6 +22,7 @@ import type {
 
 type View = "connection" | "diagnostics" | "settings";
 type MonitorFailure = { generation: number; message: string };
+type TrayResult = { Ok: Response } | { Err: string };
 const copy = {
   off: [
     "Ready when you are",
@@ -151,7 +153,23 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
 
   useEffect(() => {
     let alive = true;
-    refresh()
+    (async () => {
+      if (isTauri()) {
+        const context = await invoke<{
+          view: View;
+          tray_result: TrayResult | null;
+        }>("interface_context");
+        if (context) {
+          setView(context.view);
+          if (context.tray_result) acceptTrayResult(context.tray_result);
+          await refresh();
+          if (context.view === "diagnostics")
+            await perform({ type: "run_diagnostics" });
+          return;
+        }
+      }
+      await refresh();
+    })()
       .catch((e) => {
         if (alive) {
           setStatus(null);
@@ -187,8 +205,11 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   useEffect(() => {
     if (!isTauri()) return;
     const unlisten = listen<string>("navigate", (event) => {
-      if (["connection", "diagnostics", "settings"].includes(event.payload))
+      if (["connection", "diagnostics", "settings"].includes(event.payload)) {
         setView(event.payload as View);
+        if (event.payload === "diagnostics")
+          void perform({ type: "run_diagnostics" });
+      }
     });
     const changed = listen("service-changed", invalidate);
     const network = listen<number>("network-changed", (event) => {
@@ -217,7 +238,6 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         if (error) reportMonitorError(error);
       })
       .catch(() => reportMonitorError());
-    type TrayResult = { Ok: Response } | { Err: string };
     const diagnostic = listen<{ generation: number; result: TrayResult }>(
       "diagnostic-result",
       (event) => {
@@ -231,24 +251,33 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
           setError(result.Ok.result.message);
       },
     );
-    const tray = listen<TrayResult>("tray-result", (event) => {
-      if ("Err" in event.payload) setError(event.payload.Err);
-      else if (event.payload.Ok.result.type === "error")
-        setError(event.payload.Ok.result.message);
-      else if (
-        event.payload.Ok.result.type === "restored" &&
-        !event.payload.Ok.result.complete
-      )
-        setError(
-          `Restoration is incomplete. ${event.payload.Ok.result.issues.join(" ")}`,
-        );
-    });
+    const tray = listen<TrayResult>("tray-result", (event) =>
+      acceptTrayResult(event.payload),
+    );
+    const close = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.key.toLowerCase() === "w") {
+        event.preventDefault();
+        void getCurrentWindow().close();
+      }
+    };
+    window.addEventListener("keydown", close);
     return () => {
+      window.removeEventListener("keydown", close);
       [unlisten, changed, network, monitorError, diagnostic, tray].forEach(
         (p) => p.then((fn) => fn()),
       );
     };
   }, [invalidate]);
+
+  function acceptTrayResult(result: TrayResult) {
+    if ("Err" in result) setError(result.Err);
+    else if (result.Ok.result.type === "error")
+      setError(result.Ok.result.message);
+    else if (result.Ok.result.type === "restored" && !result.Ok.result.complete)
+      setError(
+        `Restoration is incomplete. ${result.Ok.result.issues.join(" ")}`,
+      );
+  }
   useEffect(() => {
     document.addEventListener("visibilitychange", invalidate);
     window.addEventListener("focus", invalidate);
@@ -280,6 +309,8 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
             : "Connecting to service",
     );
     try {
+      // A closed busy window keeps its response and exact retry receipt alive.
+      if (isTauri()) await invoke("retain_interface", { retain: true });
       if (request) {
         const mutation =
           request.command.type === "enable_quad9" ||
@@ -327,6 +358,8 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         }
       }
       setBusy(null);
+      if (isTauri() && !retry.current)
+        void invoke("retain_interface", { retain: false }).catch(() => {});
     }
   }
 
@@ -638,15 +671,15 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
                 </p>
               )}
               {adapters.map((adapter) => (
-                <div
+                <fieldset
                   className={`adapter ${!adapter.candidate ? "excluded" : ""}`}
                   key={adapter.id}
                 >
-                  <div className="adapter-heading">
+                  <legend className="adapter-heading">
                     <Icon name="network" />
                     <strong>{adapter.name}</strong>
                     <span>{adapter.candidate ? "Available" : "Excluded"}</span>
-                  </div>
+                  </legend>
                   {adapter.candidate ? (
                     <>
                       <div className="family-choices">
@@ -685,7 +718,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
                   ) : (
                     <small>{adapter.exclusion_reason}</small>
                   )}
-                </div>
+                </fieldset>
               ))}
             </div>
             {owned && (
@@ -711,7 +744,10 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         <span className="footer-right">Independent community client</span>
       </footer>
       <div className="sr-only" role="status" aria-live="polite">
-        {busy ?? copy[state][0]}
+        {busy ??
+          (probe
+            ? `Diagnostic complete. ${probe.outcome === "doh_observed" ? "DNS over HTTPS observed" : `Could not verify DoH. ${probe.outcome.replaceAll("_", " ")}`}`
+            : copy[state][0])}
       </div>
     </div>
   );

@@ -24,6 +24,10 @@ struct Host {
     status: MenuItem<tauri::Wry>,
     stop: Arc<AtomicBool>,
     monitor_error: Arc<Mutex<Option<MonitorFailure>>>,
+    retain_window: Arc<AtomicBool>,
+    opening: Arc<AtomicBool>,
+    next_view: Arc<Mutex<String>>,
+    tray_result: Arc<Mutex<Option<Result<Response, String>>>>,
 }
 static NEXT: AtomicU64 = AtomicU64::new(0);
 fn request(command: Command) -> Request {
@@ -186,13 +190,63 @@ async fn observed_service_request(
     }
     result
 }
-fn show(app: &tauri::AppHandle, view: &str) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
+#[derive(serde::Serialize)]
+struct InterfaceContext {
+    view: String,
+    tray_result: Option<Result<Response, String>>,
+}
+
+#[tauri::command]
+fn interface_context(app: tauri::AppHandle) -> InterfaceContext {
+    let host = app.state::<Host>();
+    InterfaceContext {
+        view: host.next_view.lock().unwrap().clone(),
+        tray_result: host.tray_result.lock().unwrap().take(),
     }
-    let _ = app.emit("navigate", view);
+}
+
+#[tauri::command]
+fn retain_interface(app: tauri::AppHandle, retain: bool) {
+    app.state::<Host>()
+        .retain_window
+        .store(retain, Ordering::Release);
+    if !retain {
+        if let Some(window) = app.get_webview_window("main") {
+            if matches!(window.is_visible(), Ok(false)) {
+                let _ = window.destroy();
+            }
+        }
+    }
+}
+
+fn show(app: &tauri::AppHandle, view: &str) {
+    let host = app.state::<Host>();
+    *host.next_view.lock().unwrap() = view.to_owned();
+    if host.opening.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let app = app.clone();
+    // WebView2 window creation must not block the Windows event thread.
+    std::thread::spawn(move || {
+        let result = (|| -> tauri::Result<()> {
+            if let Some(window) = app.get_webview_window("main") {
+                window.show()?;
+                window.unminimize()?;
+                window.set_focus()?;
+                let view = app.state::<Host>().next_view.lock().unwrap().clone();
+                app.emit("navigate", view)?;
+            } else {
+                tauri::WebviewWindowBuilder::from_config(&app, &app.config().app.windows[0])?
+                    .build()?;
+                // The new frontend reads interface_context after mounting.
+            }
+            Ok(())
+        })();
+        if let Err(error) = result {
+            eprintln!("Could not open interface: {error}");
+        }
+        app.state::<Host>().opening.store(false, Ordering::Release);
+    });
 }
 fn main() {
     tauri::Builder::default()
@@ -201,7 +255,9 @@ fn main() {
         }))
         .invoke_handler(tauri::generate_handler![
             service_request,
-            network_monitor_error
+            network_monitor_error,
+            interface_context,
+            retain_interface
         ])
         .setup(|app| {
             let title = MenuItem::new(app, "Quad9 Connect for Windows", false, None::<&str>)?;
@@ -238,6 +294,10 @@ fn main() {
                 status,
                 stop: Arc::new(AtomicBool::new(false)),
                 monitor_error: Arc::new(Mutex::new(None)),
+                retain_window: Arc::new(AtomicBool::new(false)),
+                opening: Arc::new(AtomicBool::new(false)),
+                next_view: Arc::new(Mutex::new("connection".into())),
+                tray_result: Arc::new(Mutex::new(None)),
             });
             TrayIconBuilder::with_id("quad9")
                 .icon(tauri::image::Image::from_bytes(include_bytes!(
@@ -261,26 +321,7 @@ fn main() {
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => show(app, "connection"),
                     "settings" => show(app, "settings"),
-                    "diagnostics" => {
-                        show(app, "diagnostics");
-                        let app = app.clone();
-                        tauri::async_runtime::spawn(async move {
-                            let result =
-                                observed_service_request(app.clone(), request(Command::RunDiagnostics))
-                                    .await;
-                            let payload = match result {
-                                Ok(observed) => serde_json::json!({
-                                    "generation": observed.generation,
-                                    "result": {"Ok": observed.response},
-                                }),
-                                Err(error) => serde_json::json!({
-                                    "generation": app.state::<Host>().requests.generation.load(Ordering::SeqCst),
-                                    "result": {"Err": error},
-                                }),
-                            };
-                            let _ = app.emit("diagnostic-result", payload);
-                        });
-                    }
+                    "diagnostics" => show(app, "diagnostics"),
                     "restore" => {
                         let app = app.clone();
                         tauri::async_runtime::spawn(async move {
@@ -298,8 +339,12 @@ fn main() {
                                     }),
                                 )
                                 .await;
+                                *app.state::<Host>().tray_result.lock().unwrap() =
+                                    Some(result.clone());
                                 let _ = app.emit("tray-result", result);
                             } else {
+                                *app.state::<Host>().tray_result.lock().unwrap() =
+                                    Some(status.clone());
                                 let _ = app.emit("tray-result", status);
                             }
                             let _ = app.emit("service-changed", ());
@@ -317,11 +362,22 @@ fn main() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
+                // Keep uncertain mutation receipts and in-flight UI actions alive.
+                // An idle window is rebuilt from embedded assets on the next open.
+                if !window.state::<Host>().retain_window.load(Ordering::Acquire) {
+                    let _ = window.destroy();
+                }
             }
         })
         .build(tauri::generate_context!())
         .expect("Could not start Quad9 Connect")
         .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested {
+                api, code: None, ..
+            } = &event
+            {
+                api.prevent_exit();
+            }
             if matches!(event, tauri::RunEvent::Exit) {
                 app.state::<Host>().stop.store(true, Ordering::Release);
             }
