@@ -75,7 +75,7 @@ Invoke-UserClient -User $outsider -Request $diagnosticRequest -ExpectedExit 1 | 
 $diagnostic = Invoke-UserClient -User $operator -Request $diagnosticRequest
 if ($diagnostic.result.type -ne 'diagnostics') { throw 'Authorized diagnostics did not return a report.' }
 $report = $diagnostic.result.report
-if ($report.query -cne 'proto.on.quad9.net' -or $report.outcome -notin @('doh_observed', 'other_transport_observed', 'unknown_response', 'failed', 'timed_out')) { throw 'The system-resolver observation was lost.' }
+if ($report.query -cne 'proto.on.quad9.net.' -or $report.outcome -notin @('doh_observed', 'other_transport_observed', 'unknown_response', 'failed', 'timed_out')) { throw 'The system-resolver observation was lost.' }
 $endpoints = @($report.direct_upstream.endpoints)
 if ($endpoints.Count -ne 2 -or $endpoints[0].address -cne '9.9.9.9' -or $endpoints[1].address -cne '2620:fe::fe') { throw 'Diagnostics did not report both fixed direct endpoints.' }
 foreach ($endpoint in $endpoints) {
