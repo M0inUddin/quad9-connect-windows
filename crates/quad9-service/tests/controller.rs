@@ -131,6 +131,42 @@ fn error(response: Response, expected: &str) {
 const ACTOR: &str = "S-1-5-21-1000";
 
 #[test]
+fn upgrade_preflight_preserves_active_and_restored_state_without_writes() {
+    let backend = Backend::default();
+    let mut state = State::default();
+    quad9_service::maintenance::check(&mut state).unwrap();
+    let mut controller = Controller::start(backend.clone(), state.clone()).unwrap();
+    controller.dispatch(ACTOR, enable("enable", 0));
+    let before = serde_json::to_vec(&state.0.borrow().journal).unwrap();
+    quad9_service::maintenance::check(&mut state).unwrap();
+    assert_eq!(
+        serde_json::to_vec(&state.0.borrow().journal).unwrap(),
+        before
+    );
+    assert_eq!(backend.0.borrow().writes, 1);
+    controller.dispatch(ACTOR, restore("restore", 1));
+    quad9_service::maintenance::check(&mut state).unwrap();
+    state.0.borrow_mut().journal = None;
+    assert!(quad9_service::maintenance::check(&mut state).is_err());
+}
+
+#[test]
+fn upgrade_preflight_refuses_interrupted_or_untracked_recovery() {
+    let backend = Backend::default();
+    let mut state = State::default();
+    let mut controller = Controller::start(backend.clone(), state.clone()).unwrap();
+    controller.dispatch(ACTOR, enable("enable", 0));
+    state.0.borrow_mut().requests.receipts[0].response = None;
+    assert!(quad9_service::maintenance::check(&mut state).is_err());
+    state.0.borrow_mut().requests.receipts.clear();
+    state.0.borrow_mut().journal.as_mut().unwrap().phase = TransactionPhase::RecoveryRequired;
+    assert!(quad9_service::maintenance::check(&mut state).is_err());
+    state.0.borrow_mut().journal.as_mut().unwrap().phase = TransactionPhase::Committed;
+    state.0.borrow_mut().requests.journal_expected = false;
+    assert!(quad9_service::maintenance::check(&mut state).is_err());
+}
+
+#[test]
 fn original_request_retry_never_reenables_after_restore_or_restart() {
     let backend = Backend::default();
     let state = State::default();

@@ -47,3 +47,10 @@ jobs:
           $report = $output | ConvertFrom-Json
           if ($report.schema_version -ne 1) { throw 'Unexpected diagnostics schema' }
           Write-Output "Native adapter inspection passed. Adapter count: $($report.adapters.Count)"
+      - name: Validate installer contracts under both PowerShell editions
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./scripts/validation/Test-InstallerLifecycle.ps1
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File ./scripts/validation/Test-InstallerLifecycle.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell installer contract tests failed.' }
