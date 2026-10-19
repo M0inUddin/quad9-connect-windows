@@ -1,5 +1,26 @@
 Set-StrictMode -Version Latest
 
+function Remove-HostValidationBinary {
+    param([string] $Path, [string] $ExpectedSha256)
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    $file = Get-Item -LiteralPath $Path
+    if ($file.PSIsContainer -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+        (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -ne $ExpectedSha256) {
+        throw 'The staged service binary is not the recorded test build; preserve it.'
+    }
+    Remove-Item -LiteralPath $Path
+}
+
+function Assert-HostAutomaticBaseline {
+    param($Snapshot, $StaticNameServer)
+    Get-HostDnsSignature $Snapshot | Out-Null
+    if (-not [string]::IsNullOrEmpty([string]$StaticNameServer) -or
+        -not [string]::IsNullOrEmpty([string]$Snapshot.NameServer) -or
+        $Snapshot.Properties.Count -ne 0 -or $Snapshot.ProfileNameServer -or $Snapshot.ProfileCount -ne 0) {
+        throw 'This host runner requires an automatic DNS baseline without per-server or profile settings. Use disposable VM fixtures for other baselines.'
+    }
+}
+
 function Test-HostValidationOwner {
     param($Plan, $Owner)
     if ($null -eq $Owner -or $Owner.StartTime.ToUniversalTime().Ticks -ne $Plan.owner_started_ticks) { return $false }

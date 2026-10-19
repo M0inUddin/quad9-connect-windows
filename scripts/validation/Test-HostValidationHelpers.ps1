@@ -6,6 +6,15 @@ if ($parseErrors.Count -ne 0) { throw ($parseErrors | Out-String) }
 . (Join-Path $PSScriptRoot 'HostValidationHelpers.ps1')
 
 $original = [pscustomobject]@{ Code = 0; NameServer = ''; ProfileNameServer = $null; ProfileCount = 0; Properties = @() }
+Assert-HostAutomaticBaseline $original $null
+foreach ($case in @(
+    @{ snapshot = $original; registry = '192.0.2.53' },
+    @{ snapshot = (New-HostQuad9Snapshot $false); registry = $null }
+)) {
+    $refused = $false
+    try { Assert-HostAutomaticBaseline $case.snapshot $case.registry } catch { $refused = $true }
+    if (-not $refused) { throw 'Unsupported native or registry baselines must be rejected before host writes.' }
+}
 $plan = [pscustomobject]@{ adapter_id = 'private-test'; families = @(
     [pscustomobject]@{ ipv6 = $false; snapshot = $original; applied = (New-HostQuad9Snapshot $false) },
     [pscustomobject]@{ ipv6 = $true; snapshot = $original; applied = (New-HostQuad9Snapshot $true) }
@@ -84,3 +93,26 @@ $members.Add([pscustomobject]@{ SID = [pscustomobject]@{ Value = 'another-user' 
 Restore-HostOperatorEnrollment $enrollment
 if ($members.Count -ne 1 -or $groupRemoved) { throw 'A group with another member must be preserved.' }
 Write-Output 'Host cleanup tests passed: both PowerShell hosts, process identity, new enrollment cleanup, and preservation of preexisting or shared groups.'
+
+$fixture = Join-Path ([IO.Path]::GetTempPath()) ('Quad9HostCleanup-' + [guid]::NewGuid().ToString('N'))
+[IO.Directory]::CreateDirectory($fixture) | Out-Null
+$binary = Join-Path $fixture 'quad9-service.exe'
+$unrelated = Join-Path $fixture 'unrelated.txt'
+try {
+    [IO.File]::WriteAllText($binary, 'recorded test build')
+    [IO.File]::WriteAllText($unrelated, 'preserve this file')
+    $hash = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash
+    Remove-HostValidationBinary -Path $binary -ExpectedSha256 $hash
+    if ((Test-Path -LiteralPath $binary) -or -not (Test-Path -LiteralPath $unrelated)) { throw 'Partial install cleanup must remove only the recorded binary.' }
+    Remove-Item -LiteralPath $unrelated
+    [IO.Directory]::Delete($fixture, $false)
+    [IO.Directory]::CreateDirectory($fixture) | Out-Null
+    [IO.File]::WriteAllText($binary, 'unknown replacement')
+    $refused = $false
+    try { Remove-HostValidationBinary -Path $binary -ExpectedSha256 $hash } catch { $refused = $true }
+    if (-not $refused -or -not (Test-Path -LiteralPath $binary)) { throw 'An unknown replacement binary must be retained.' }
+} finally {
+    foreach ($file in @($binary, $unrelated)) { if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file } }
+    if (Test-Path -LiteralPath $fixture) { [IO.Directory]::Delete($fixture, $false) }
+}
+Write-Output 'Partial install cleanup tests passed: recorded binary removed, unrelated file preserved, and unknown replacement refused.'

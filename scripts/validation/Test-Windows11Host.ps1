@@ -82,6 +82,9 @@ function Remove-HostTestInstallation {
     if (Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue) {
         throw 'DNS is restored, but the stopped service and recovery records require inspection.'
     }
+    # Copying can complete before service creation. Remove only the recorded
+    # executable in that partial-install state, leaving any unknown files alone.
+    Remove-HostValidationBinary -Path $installed -ExpectedSha256 $Plan.binary_sha256
     Restore-HostOperatorEnrollment $Plan
     # Retain this run's recovery records without making a later development
     # install mistake them for a preexisting installation. Never delete them.
@@ -177,8 +180,18 @@ try {
     foreach ($ipv6 in @($false, $true)) {
         if (($ipv6 -and -not $adapter[0].ipv6_usable) -or (-not $ipv6 -and -not $adapter[0].ipv4_enabled)) { continue }
         $snapshot = [Quad9Validation.DnsApi]::Read($AdapterId, $ipv6)
-        Get-HostDnsSignature $snapshot | Out-Null
-        if ($snapshot.ProfileNameServer -or $snapshot.ProfileCount -ne 0) { throw 'Profile DNS settings are outside this host test.' }
+        $protocol = if ($ipv6) { 'Tcpip6' } else { 'Tcpip' }
+        $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SYSTEM\CurrentControlSet\Services\$protocol\Parameters\Interfaces\{$AdapterId}")
+        $static = $null
+        if ($null -ne $key) {
+            try {
+                if ($key.GetValueNames() -contains 'NameServer') {
+                    if ($key.GetValueKind('NameServer') -ne [Microsoft.Win32.RegistryValueKind]::String) { throw 'Unsupported static DNS value type.' }
+                    $static = $key.GetValue('NameServer', $null)
+                }
+            } finally { $key.Dispose() }
+        }
+        Assert-HostAutomaticBaseline $snapshot $static
         $families += [pscustomobject]@{ ipv6 = $ipv6; snapshot = $snapshot; applied = (New-HostQuad9Snapshot $ipv6) }
     }
     if ($families.Count -eq 0) { throw 'No supported address family is available.' }
