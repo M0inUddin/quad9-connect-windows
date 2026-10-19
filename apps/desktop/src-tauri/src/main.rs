@@ -3,7 +3,7 @@ use quad9_service::client::{ClientCoordinator, ObservedResponse};
 use quad9_service::protocol::{Command, Request, Response, ResultBody};
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc, Mutex,
+    Arc, Condvar, Mutex,
 };
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -25,7 +25,8 @@ struct Host {
     stop: Arc<AtomicBool>,
     monitor_error: Arc<Mutex<Option<MonitorFailure>>>,
     retain_window: Arc<AtomicBool>,
-    opening: Arc<AtomicBool>,
+    window_transition: Arc<Mutex<()>>,
+    destroyed: Arc<(Mutex<u64>, Condvar)>,
     next_view: Arc<Mutex<String>>,
     tray_result: Arc<Mutex<Option<Result<Response, String>>>>,
 }
@@ -205,47 +206,108 @@ fn interface_context(app: tauri::AppHandle) -> InterfaceContext {
 }
 
 #[tauri::command]
-fn retain_interface(app: tauri::AppHandle, retain: bool) {
-    app.state::<Host>()
-        .retain_window
-        .store(retain, Ordering::Release);
-    if !retain {
-        if let Some(window) = app.get_webview_window("main") {
-            if matches!(window.is_visible(), Ok(false)) {
-                let _ = window.destroy();
-            }
+async fn retain_interface(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    retain: bool,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let host = app.state::<Host>();
+        let _transition = host.window_transition.lock().map_err(|e| e.to_string())?;
+        if !is_current_window(&app, &window) {
+            return Ok(());
         }
+        host.retain_window.store(retain, Ordering::Release);
+        if !retain && matches!(window.is_visible(), Ok(false)) {
+            destroy_window(&app, &window)?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn is_current_window(app: &tauri::AppHandle, window: &tauri::Window) -> bool {
+    match (
+        app.get_window("main")
+            .and_then(|current| current.hwnd().ok()),
+        window.hwnd().ok(),
+    ) {
+        (Some(current), Some(candidate)) => current == candidate,
+        _ => false,
     }
+}
+
+// Called only off the event thread, with window_transition held. A queued
+// destroy is not complete until Tauri has removed the old window from its
+// manager. The run callback signals that removal before a reopen can proceed.
+fn destroy_window(app: &tauri::AppHandle, window: &tauri::Window) -> Result<(), String> {
+    let host = app.state::<Host>();
+    let (generation, changed) = &*host.destroyed;
+    let before = *generation.lock().map_err(|e| e.to_string())?;
+    window.destroy().map_err(|e| e.to_string())?;
+    let current = generation.lock().map_err(|e| e.to_string())?;
+    let (_completed, timeout) = changed
+        .wait_timeout_while(current, std::time::Duration::from_secs(10), |value| {
+            *value == before
+        })
+        .map_err(|e| e.to_string())?;
+    if timeout.timed_out() {
+        return Err("Window destruction did not finish before its deadline".into());
+    }
+    Ok(())
+}
+
+fn hide_interface(window: tauri::Window) {
+    let app = window.app_handle().clone();
+    std::thread::spawn(move || {
+        let result = (|| -> Result<(), String> {
+            let host = app.state::<Host>();
+            let _transition = host.window_transition.lock().map_err(|e| e.to_string())?;
+            if !is_current_window(&app, &window) {
+                return Ok(());
+            }
+            window.hide().map_err(|e| e.to_string())?;
+            if !host.retain_window.load(Ordering::Acquire) {
+                destroy_window(&app, &window)?;
+            }
+            Ok(())
+        })();
+        if let Err(error) = result {
+            eprintln!("Could not hide interface: {error}");
+        }
+    });
 }
 
 fn show(app: &tauri::AppHandle, view: &str) {
     let host = app.state::<Host>();
     *host.next_view.lock().unwrap() = view.to_owned();
-    if host.opening.swap(true, Ordering::AcqRel) {
-        return;
-    }
     let app = app.clone();
     // WebView2 window creation must not block the Windows event thread.
     std::thread::spawn(move || {
-        let result = (|| -> tauri::Result<()> {
-            if let Some(window) = app.get_webview_window("main") {
-                window.show()?;
-                window.unminimize()?;
-                window.set_focus()?;
-                let view = app.state::<Host>().next_view.lock().unwrap().clone();
-                app.emit("navigate", view)?;
-            } else {
-                tauri::WebviewWindowBuilder::from_config(&app, &app.config().app.windows[0])?
-                    .build()?;
-                // The new frontend reads interface_context after mounting.
-            }
-            Ok(())
+        let result = (|| -> Result<(), String> {
+            let host = app.state::<Host>();
+            let _transition = host.window_transition.lock().map_err(|e| e.to_string())?;
+            show_window(&app).map_err(|e| e.to_string())
         })();
         if let Err(error) = result {
             eprintln!("Could not open interface: {error}");
         }
-        app.state::<Host>().opening.store(false, Ordering::Release);
     });
+}
+
+fn show_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.show()?;
+        window.unminimize()?;
+        window.set_focus()?;
+        let view = app.state::<Host>().next_view.lock().unwrap().clone();
+        app.emit("navigate", view)?;
+    } else {
+        tauri::WebviewWindowBuilder::from_config(&app, &app.config().app.windows[0])?.build()?;
+        // The new frontend reads interface_context after mounting.
+    }
+    Ok(())
 }
 fn main() {
     tauri::Builder::default()
@@ -294,7 +356,8 @@ fn main() {
                 stop: Arc::new(AtomicBool::new(false)),
                 monitor_error: Arc::new(Mutex::new(None)),
                 retain_window: Arc::new(AtomicBool::new(false)),
-                opening: Arc::new(AtomicBool::new(false)),
+                window_transition: Arc::new(Mutex::new(())),
+                destroyed: Arc::new((Mutex::new(0), Condvar::new())),
                 next_view: Arc::new(Mutex::new("connection".into())),
                 tray_result: Arc::new(Mutex::new(None)),
             });
@@ -360,17 +423,19 @@ fn main() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                let _ = window.hide();
                 // Keep uncertain mutation receipts and in-flight UI actions alive.
                 // An idle window is rebuilt from embedded assets on the next open.
-                if !window.state::<Host>().retain_window.load(Ordering::Acquire) {
-                    let _ = window.destroy();
-                }
+                hide_interface(window.clone());
             }
         })
         .build(tauri::generate_context!())
         .expect("Could not start Quad9 Connect")
         .run(|app, event| {
+            if matches!(&event, tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::Destroyed, .. } if label == "main") {
+                let host = app.state::<Host>();
+                let (generation, changed) = &*host.destroyed;
+                if let Ok(mut value) = generation.lock() { *value += 1; changed.notify_all(); };
+            }
             if let tauri::RunEvent::ExitRequested {
                 api, code: None, ..
             } = &event

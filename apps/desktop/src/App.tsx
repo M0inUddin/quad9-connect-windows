@@ -99,6 +99,9 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   const [monitorUnavailable, setMonitorUnavailable] = useState(false);
   const [probe, setProbe] = useState<Probe | null>(null);
   const lock = useRef(false);
+  const actionActive = useRef(false);
+  const initializing = useRef(true);
+  const diagnosticQueued = useRef(false);
   const retry = useRef<Request | null>(null);
   const observationEpoch = useRef(0);
   const nativeGeneration = useRef(0);
@@ -160,9 +163,8 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         if (context) {
           setView(context.view);
           if (context.tray_result) acceptTrayResult(context.tray_result);
+          if (context.view === "diagnostics") diagnosticQueued.current = true;
           await refresh();
-          if (context.view === "diagnostics")
-            await perform({ type: "run_diagnostics" });
           return;
         }
       }
@@ -175,7 +177,11 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         }
       })
       .finally(() => {
-        if (alive) setBusy(null);
+        if (alive) {
+          initializing.current = false;
+          if (diagnosticQueued.current) requestTrayDiagnostic();
+          else setBusy(null);
+        }
       });
     return () => {
       alive = false;
@@ -210,8 +216,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         void invoke<InterfaceContext>("interface_context")
           .then((context) => {
             if (context?.tray_result) acceptTrayResult(context.tray_result);
-            if (event.payload === "diagnostics")
-              void perform({ type: "run_diagnostics" });
+            if (event.payload === "diagnostics") requestTrayDiagnostic();
           })
           .catch((error) => setError(String(error)));
       }
@@ -296,8 +301,16 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
     };
   }, [invalidate]);
 
+  function requestTrayDiagnostic() {
+    diagnosticQueued.current = true;
+    if (initializing.current || actionActive.current) return;
+    diagnosticQueued.current = false;
+    void perform({ type: "run_diagnostics" });
+  }
+
   async function perform(command?: Command) {
-    if (lock.current) return;
+    if (actionActive.current) return;
+    actionActive.current = true;
     lock.current = true;
     setError(null);
     const epoch = observationEpoch.current;
@@ -363,9 +376,16 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
           setStatus(null);
         }
       }
-      setBusy(null);
-      if (isTauri() && !retry.current)
-        void invoke("retain_interface", { retain: false }).catch(() => {});
+      actionActive.current = false;
+      if (diagnosticQueued.current) {
+        // Coalesce tray requests and keep the retained document across the
+        // handoff, including the final replacement read of the earlier action.
+        if (!initializing.current) requestTrayDiagnostic();
+      } else {
+        setBusy(null);
+        if (isTauri() && !retry.current)
+          void invoke("retain_interface", { retain: false }).catch(() => {});
+      }
     }
   }
 

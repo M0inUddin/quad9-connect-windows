@@ -198,6 +198,41 @@ try {
         single_instance_reopen: true,
         preferences_preserved: true,
       };
+      // Release a retained hidden document concurrently with a second launch.
+      // Either the old document is shown or a replacement is built; the latest
+      // Open action must leave a live, visible window in both orderings.
+      for (let cycle = 0; cycle < 6; cycle++) {
+        await page.evaluate(() =>
+          window.__TAURI_INTERNALS__.invoke("retain_interface", {
+            retain: true,
+          }),
+        );
+        await page.keyboard.press("Control+w");
+        await expect
+          .poll(() => page.evaluate(() => document.hidden))
+          .toBe(true);
+        await page
+          .evaluate(() => {
+            void window.__TAURI_INTERNALS__
+              .invoke("retain_interface", { retain: false })
+              .catch(() => {});
+          })
+          .catch((error) => {
+            if (!page.isClosed()) throw error;
+          });
+        const previous = browser;
+        ({ browser, page } = await reopen(executable, port, child));
+        await previous.close().catch(() => {});
+        await page.waitForFunction(() => !document.hidden);
+        await delay(150);
+        expect(page.isClosed()).toBe(false);
+        await expect(
+          page.getByRole("heading", {
+            name: /Service unavailable|Ready when you are/,
+          }),
+        ).toBeVisible();
+      }
+      report.lifecycle.concurrent_release_reopen_cycles = 6;
       // Verify the rebuilt document can be closed again and the tray host survives.
       await closeWindow(page);
       expect(child.exitCode).toBe(null);
