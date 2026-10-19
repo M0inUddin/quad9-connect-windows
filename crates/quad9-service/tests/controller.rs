@@ -260,6 +260,21 @@ fn journal_disappearance_during_service_lifetime_blocks_enable_and_restore() {
     controller.dispatch(ACTOR, enable("one", 0));
     state.0.borrow_mut().journal = None;
     let writes = backend.0.borrow().writes;
+    let status = controller.dispatch(
+        ACTOR,
+        Request {
+            version: 1,
+            id: "inspect-missing".into(),
+            command: Command::GetStatus,
+        },
+    );
+    assert!(matches!(
+        status.result,
+        ResultBody::Status {
+            recovery_blocked: true,
+            ..
+        }
+    ));
     error(
         controller.dispatch(ACTOR, enable("two", 1)),
         "recovery_required",

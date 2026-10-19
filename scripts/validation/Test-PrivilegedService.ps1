@@ -12,7 +12,7 @@ $credentials = @{}
 foreach ($name in @($operator, $outsider)) {
     $password = ConvertTo-SecureString ([guid]::NewGuid().ToString('N') + 'aA7!') -AsPlainText -Force
     New-LocalUser -Name $name -Password $password -AccountNeverExpires | Out-Null
-    Add-LocalGroupMember -Group ([Security.Principal.SecurityIdentifier]'S-1-5-32-545') -Member $name
+    Add-LocalGroupMember -SID ([Security.Principal.SecurityIdentifier]'S-1-5-32-545') -Member $name
     $credentials[$name] = [PSCredential]::new("$env:COMPUTERNAME\$name", $password)
 }
 & (Join-Path $PSScriptRoot '..\Install-DevelopmentService.ps1') -BinaryPath $BinaryPath -OperatorAccount "$env:COMPUTERNAME\$operator" -ValidationVm

@@ -5,7 +5,7 @@ mod security;
 
 pub use pipe::{serve, transact};
 pub use scm::run_service;
-pub use security::MachineDirectory;
+pub use security::{validate_private_file, MachineDirectory};
 
 use crate::NativeError;
 use std::{ptr, sync::atomic::AtomicBool};

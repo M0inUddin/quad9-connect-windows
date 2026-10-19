@@ -156,7 +156,7 @@ impl MachineDirectory {
         {
             return Err(invalid("Recovery directory must not be a reparse point"));
         }
-        validate_directory_acl(directory.0)?;
+        validate_acl(directory.0, true)?;
         Ok(Self {
             path,
             _directory: directory,
@@ -164,7 +164,12 @@ impl MachineDirectory {
     }
 }
 
-fn validate_directory_acl(directory: HANDLE) -> Result<(), NativeError> {
+pub fn validate_private_file(file: &std::fs::File) -> Result<(), NativeError> {
+    use std::os::windows::io::AsRawHandle;
+    validate_acl(file.as_raw_handle(), false)
+}
+
+fn validate_acl(directory: HANDLE, require_protected: bool) -> Result<(), NativeError> {
     let mut owner = ptr::null_mut();
     let mut dacl = ptr::null_mut();
     let mut descriptor = ptr::null_mut();
@@ -204,7 +209,7 @@ fn validate_directory_acl(directory: HANDLE) -> Result<(), NativeError> {
     if unsafe { GetSecurityDescriptorControl(descriptor, &mut control, &mut revision) } == 0 {
         return Err(last_error("GetSecurityDescriptorControl"));
     }
-    if control & SE_DACL_PROTECTED == 0 {
+    if require_protected && control & SE_DACL_PROTECTED == 0 {
         return Err(invalid("Recovery directory must have a protected DACL"));
     }
     // SAFETY: dacl came from GetSecurityInfo and is valid for this allocation.

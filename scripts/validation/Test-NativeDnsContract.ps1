@@ -49,6 +49,22 @@ try {
         $properties = @(0, 1 | ForEach-Object { [Quad9Validation.DohValue]@{
             Version = 1; Index = $_; Type = 1; Template = 'https://dns.quad9.net/dns-query'; Flags = 2
         } })
+        $priorServers = if ($family.ipv6) { '2620:fe::9,2620:fe::fe' } else { '149.112.112.112,9.9.9.9' }
+        $priorProperties = @(0, 1 | ForEach-Object { [Quad9Validation.DohValue]@{
+            Version = 1; Index = $_; Type = 1; Template = 'https://dns.quad9.net/dns-query'; Flags = 6
+        } })
+        $cases = @(
+            @{ name = 'original'; snapshot = $family.snapshot },
+            @{ name = 'static plain'; snapshot = @{ NameServer = $priorServers; Properties = @() } },
+            @{ name = 'static DoH with fallback'; snapshot = @{ NameServer = $priorServers; Properties = $priorProperties } }
+        )
+        foreach ($case in $cases) {
+        [Quad9Validation.DnsApi]::Write($id, $family.ipv6, $case.snapshot.NameServer, (ConvertTo-DohValues @($case.snapshot.Properties)))
+        $saved = [Quad9Validation.DnsApi]::Read($id, $family.ipv6)
+        if (([string]$saved.NameServer) -ne ([string]$case.snapshot.NameServer) -or
+            ($saved.Properties | ConvertTo-Json -Depth 6 -Compress) -ne ($case.snapshot.Properties | ConvertTo-Json -Depth 6 -Compress)) {
+            throw "Could not establish the $($case.name) restore fixture."
+        }
         [Quad9Validation.DnsApi]::Write($id, $family.ipv6, $servers, $properties)
         $actual = [Quad9Validation.DnsApi]::Read($id, $family.ipv6)
         if ($actual.Code -ne 0 -or $actual.NameServer -ne $servers -or $actual.Properties.Count -ne 2) {
@@ -57,13 +73,15 @@ try {
         if (@($actual.Properties | Where-Object { $_.Flags -ne 2 -or $_.Template -ne 'https://dns.quad9.net/dns-query' }).Count -ne 0) {
             throw 'Strict encryption readback did not match.'
         }
-        Restore-ValidationBaseline @{ adapter_id = $id.ToString(); families = @($family) }
+        Restore-ValidationBaseline @{ adapter_id = $id.ToString(); families = @(@{ ipv6 = $family.ipv6; snapshot = $saved }) }
         $restored = [Quad9Validation.DnsApi]::Read($id, $family.ipv6)
-        if (([string]$restored.NameServer) -ne ([string]$family.snapshot.NameServer) -or
-            ($restored.Properties | ConvertTo-Json -Depth 6 -Compress) -ne ($family.snapshot.Properties | ConvertTo-Json -Depth 6 -Compress)) {
+        if (([string]$restored.NameServer) -ne ([string]$saved.NameServer) -or
+            ($restored.Properties | ConvertTo-Json -Depth 6 -Compress) -ne ($saved.Properties | ConvertTo-Json -Depth 6 -Compress)) {
             throw 'Original assignment and DoH settings were not restored exactly.'
         }
-        Write-Output "Strict DoH write, readback, and baseline restore passed for IPv6=$($family.ipv6)."
+        Write-Output "Strict DoH write, readback, and $($case.name) restore passed for IPv6=$($family.ipv6)."
+        }
+        Restore-ValidationBaseline @{ adapter_id = $id.ToString(); families = @($family) }
     }
 } finally {
     Restore-ValidationBaseline $baseline

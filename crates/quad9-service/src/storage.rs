@@ -27,6 +27,14 @@ fn storage_error(error: impl std::fmt::Display) -> CoreError {
     CoreError::Journal(error.to_string())
 }
 
+fn validate_file(file: &File) -> Result<(), CoreError> {
+    #[cfg(all(windows, not(test)))]
+    quad9_native::service::validate_private_file(file).map_err(storage_error)?;
+    #[cfg(any(not(windows), test))]
+    let _ = file;
+    Ok(())
+}
+
 fn reject_reparse(path: &Path) -> Result<bool, CoreError> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
@@ -59,6 +67,7 @@ impl AtomicFiles {
             options.share_mode(0).custom_flags(0x0020_0000); // OPEN_REPARSE_POINT
         }
         let lock = options.open(lock_path).map_err(storage_error)?;
+        validate_file(&lock)?;
         lock.try_lock().map_err(storage_error)?;
         Ok(Self {
             root: root.into(),
@@ -79,6 +88,7 @@ impl AtomicFiles {
             options.custom_flags(0x0020_0000);
         }
         let file = options.open(path).map_err(storage_error)?;
+        validate_file(&file)?;
         let mut bytes = Vec::new();
         file.take(MAX_STATE_BYTES as u64 + 1)
             .read_to_end(&mut bytes)
@@ -109,6 +119,7 @@ impl AtomicFiles {
             return Err(storage_error("Recovery state exceeds its size limit"));
         }
         let mut file = File::create_new(&temporary).map_err(storage_error)?;
+        validate_file(&file)?;
         file.write_all(&bytes).map_err(storage_error)?;
         file.sync_all().map_err(storage_error)?;
         drop(file);

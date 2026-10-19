@@ -203,6 +203,9 @@ impl<B: ServiceBackend, S: JournalStore + StateStore> Controller<B, S> {
     fn read_only(&mut self, request: Request) -> Response {
         let result = match request.command {
             Command::GetStatus => self.engine.store.load().and_then(|journal| {
+                if self.state.journal_expected && journal.is_none() {
+                    self.recovery_blocked = true;
+                }
                 if let Some(journal) = &journal {
                     journal.validate()?;
                 }

@@ -167,6 +167,22 @@ impl WindowsDnsBackend {
     pub fn validate_scope(&mut self, targets: &[Target]) -> Result<(), CoreError> {
         check_policies()?;
         let adapters = inspect_adapters().map_err(failure)?;
+        if !self.validation_vm {
+            for adapter in adapters.iter().filter(|a| a.connected) {
+                for (family, active) in [
+                    (AddressFamily::Ipv4, adapter.has_ipv4_dns),
+                    (AddressFamily::Ipv6, adapter.has_ipv6_dns),
+                ] {
+                    if active
+                        && !targets
+                            .iter()
+                            .any(|t| t.adapter_id == adapter.id && t.family == family)
+                    {
+                        return Err(failure("Another active resolver scope is outside the selection; inspect adapters and VPNs before enabling"));
+                    }
+                }
+            }
+        }
         for target in targets {
             let adapter = adapters
                 .iter()
@@ -186,15 +202,10 @@ impl WindowsDnsBackend {
             {
                 return Err(failure("Selected address family is not enabled"));
             }
-            // All enabled resolver families on a managed adapter must be explicit.
-            if !self.validation_vm
-                && adapter.ipv6_enabled
-                && !targets
-                    .iter()
-                    .any(|t| t.adapter_id == target.adapter_id && t.family == AddressFamily::Ipv6)
-            {
+            // IPv6 requires a preferred global address and an IPv6 gateway.
+            if !self.validation_vm && target.family == AddressFamily::Ipv6 && !adapter.ipv6_usable {
                 return Err(failure(
-                    "An enabled IPv6 stack needs an explicit supported IPv6 scope",
+                    "Selected IPv6 scope has no usable global IPv6 address and gateway",
                 ));
             }
             self.read(target)?;

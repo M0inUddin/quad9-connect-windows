@@ -5,7 +5,7 @@ use windows_sys::{
     Win32::{
         Foundation::{ERROR_BUFFER_OVERFLOW, ERROR_NO_DATA},
         NetworkManagement::{Dns::*, IpHelper::*, Ndis::IfOperStatusUp},
-        Networking::WinSock::AF_UNSPEC,
+        Networking::WinSock::*,
         System::LibraryLoader::{GetModuleHandleW, GetProcAddress},
     },
 };
@@ -69,7 +69,10 @@ pub fn inspect_adapters() -> Result<Vec<AdapterInspection>, NativeError> {
         let code = unsafe {
             GetAdaptersAddresses(
                 AF_UNSPEC as u32,
-                GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_INCLUDE_ALL_INTERFACES,
+                GAA_FLAG_SKIP_ANYCAST
+                    | GAA_FLAG_SKIP_MULTICAST
+                    | GAA_FLAG_INCLUDE_ALL_INTERFACES
+                    | GAA_FLAG_INCLUDE_GATEWAYS,
                 ptr::null(),
                 head,
                 &mut size,
@@ -123,6 +126,64 @@ pub fn inspect_adapters() -> Result<Vec<AdapterInspection>, NativeError> {
                 Ok(settings) => (Some(settings), None),
                 Err(error) => (None, Some(error.to_string())),
             };
+            let mut has_ipv4_dns = false;
+            let mut has_ipv6_dns = false;
+            let mut dns = adapter.FirstDnsServerAddress;
+            for _ in 0..512 {
+                if dns.is_null() {
+                    break;
+                }
+                // SAFETY: The bounded list and its socket addresses belong to the live adapter buffer.
+                let node = unsafe { &*dns };
+                if !node.Address.lpSockaddr.is_null()
+                    && node.Address.iSockaddrLength >= mem::size_of::<SOCKADDR>() as i32
+                {
+                    // SAFETY: The socket header is present for the reported length.
+                    let family = unsafe { (*node.Address.lpSockaddr).sa_family };
+                    has_ipv4_dns |= family == AF_INET;
+                    has_ipv6_dns |= family == AF_INET6;
+                }
+                dns = node.Next;
+            }
+            let mut global_v6 = false;
+            let mut unicast = adapter.FirstUnicastAddress;
+            for _ in 0..512 {
+                if unicast.is_null() {
+                    break;
+                }
+                // SAFETY: This node is in the live Windows adapter allocation.
+                let node = unsafe { &*unicast };
+                if node.DadState == IpDadStatePreferred
+                    && !node.Address.lpSockaddr.is_null()
+                    && node.Address.iSockaddrLength >= mem::size_of::<SOCKADDR_IN6>() as i32
+                {
+                    // SAFETY: The family header is present; IN6 is read only for an IPv6 socket of the correct size.
+                    if unsafe { (*node.Address.lpSockaddr).sa_family } == AF_INET6 {
+                        // SAFETY: The length and family above establish the complete IPv6 socket.
+                        let address = unsafe { &*node.Address.lpSockaddr.cast::<SOCKADDR_IN6>() };
+                        // SAFETY: Byte is the byte representation of the initialized IPv6 union.
+                        let bytes = unsafe { address.sin6_addr.u.Byte };
+                        global_v6 |= bytes[0] & 0xe0 == 0x20;
+                    }
+                }
+                unicast = node.Next;
+            }
+            let mut v6_gateway = false;
+            let mut gateway = adapter.FirstGatewayAddress;
+            for _ in 0..512 {
+                if gateway.is_null() {
+                    break;
+                }
+                // SAFETY: This node and socket header belong to the live adapter buffer.
+                let node = unsafe { &*gateway };
+                if !node.Address.lpSockaddr.is_null()
+                    && node.Address.iSockaddrLength >= mem::size_of::<SOCKADDR>() as i32
+                {
+                    // SAFETY: The socket header is present for the reported length.
+                    v6_gateway |= unsafe { (*node.Address.lpSockaddr).sa_family } == AF_INET6;
+                }
+                gateway = node.Next;
+            }
             result.push(AdapterInspection {
                 id,
                 name,
@@ -131,6 +192,9 @@ pub fn inspect_adapters() -> Result<Vec<AdapterInspection>, NativeError> {
                 hardware_interface: hardware,
                 ipv4_enabled: flags & IP_ADAPTER_IPV4_ENABLED != 0,
                 ipv6_enabled: flags & IP_ADAPTER_IPV6_ENABLED != 0,
+                ipv6_usable: global_v6 && v6_gateway,
+                has_ipv4_dns,
+                has_ipv6_dns,
                 candidate: reason.is_none(),
                 exclusion_reason: reason.map(String::from),
                 dns_readback,
