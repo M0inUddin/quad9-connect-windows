@@ -34,6 +34,13 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/validation/Test-HostValidationHelpers.ps1
+      - name: Resolve built-in service modules under both PowerShell editions
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./scripts/validation/Test-ServicePowerShellEnvironment.ps1
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -File ./scripts/validation/Test-ServicePowerShellEnvironment.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell recovery module regression failed.' }
       - name: Validate host recovery under Windows PowerShell 5.1
         if: runner.os == 'Windows'
         shell: powershell
