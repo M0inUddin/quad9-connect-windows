@@ -199,10 +199,9 @@ struct InterfaceContext {
 #[tauri::command]
 fn interface_context(app: tauri::AppHandle) -> InterfaceContext {
     let host = app.state::<Host>();
-    InterfaceContext {
-        view: host.next_view.lock().unwrap().clone(),
-        tray_result: host.tray_result.lock().unwrap().take(),
-    }
+    let view = host.next_view.lock().unwrap().clone();
+    let tray_result = host.tray_result.lock().unwrap().take();
+    InterfaceContext { view, tray_result }
 }
 
 #[tauri::command]
