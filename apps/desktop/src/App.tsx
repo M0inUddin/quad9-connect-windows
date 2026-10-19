@@ -214,7 +214,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
     // Registration may fail before the webview has installed its listeners.
     invoke<MonitorFailure | null>("network_monitor_error")
       .then((error) => {
-        if (error) reportMonitorError();
+        if (error) reportMonitorError(error);
       })
       .catch(() => reportMonitorError());
     type TrayResult = { Ok: Response } | { Err: string };
