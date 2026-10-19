@@ -19,6 +19,10 @@ const output = resolve(
   process.argv[4] ?? "../../output/playwright/native-validation",
 );
 await mkdir(output, { recursive: true });
+const isVisible = (page) =>
+  page.evaluate(() =>
+    window.__TAURI_INTERNALS__.invoke("plugin:window|is_visible", { label: "main" }),
+  );
 const report = {
   schema: 1,
   passed: false,
@@ -225,10 +229,10 @@ try {
         const previous = browser;
         ({ browser, page } = await reopen(executable, port, child));
         await previous.close().catch(() => {});
-        await page.waitForFunction(() => !document.hidden);
+        await expect.poll(() => isVisible(page)).toBe(true);
         await delay(150);
         expect(page.isClosed()).toBe(false);
-        expect(await page.evaluate(() => document.hidden)).toBe(false);
+        expect(await isVisible(page)).toBe(true);
       }
       report.lifecycle.immediate_close_reopen_cycles = 6;
       // Release a retained hidden document concurrently with a second launch.
@@ -242,8 +246,8 @@ try {
         );
         await page.keyboard.press("Control+w");
         await expect
-          .poll(() => page.evaluate(() => document.hidden))
-          .toBe(true);
+          .poll(() => isVisible(page))
+          .toBe(false);
         await page
           .evaluate(() => {
             void window.__TAURI_INTERNALS__
@@ -256,7 +260,7 @@ try {
         const previous = browser;
         ({ browser, page } = await reopen(executable, port, child));
         await previous.close().catch(() => {});
-        await page.waitForFunction(() => !document.hidden);
+        await expect.poll(() => isVisible(page)).toBe(true);
         await delay(150);
         expect(page.isClosed()).toBe(false);
         await expect(
