@@ -11,6 +11,7 @@ try {
     Invoke-Quad9Lifecycle -Operation $Operation -Payload $Payload -OperatorSid $OperatorSid
     exit 0
 } catch {
+    [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'lifecycle-error.txt'), ($_ | Out-String) + $_.ScriptStackTrace)
     Write-Error -ErrorAction Continue $_
     exit 1
 }

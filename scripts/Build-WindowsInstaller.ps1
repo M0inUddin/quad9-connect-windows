@@ -3,7 +3,8 @@ param(
     [string] $DesktopBinary = (Join-Path $PSScriptRoot '..\apps\desktop\src-tauri\target\release\quad9-desktop.exe'),
     [string] $MakeNsis = (Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'),
     [string] $OutputDirectory = (Join-Path $PSScriptRoot '..\artifacts\installer'),
-    [ValidatePattern('^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$')][string] $Version
+    [ValidatePattern('^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$')][string] $Version,
+    [ValidateSet('x86_64-pc-windows-msvc', 'x86_64-pc-windows-gnu', 'unspecified')][string] $BuildTarget = 'unspecified'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -34,4 +35,8 @@ finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw 'NSIS compilation failed.' }
 $hash = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToLowerInvariant()
 "$hash  $([IO.Path]::GetFileName($output))" | Set-Content -LiteralPath "$output.sha256" -Encoding ascii
+$sourceCommit = git -C $repo rev-parse HEAD
+if ($LASTEXITCODE -ne 0) { throw 'Cannot record the source commit.' }
+$sourceDirty = [bool](git -C $repo status --porcelain)
+[ordered]@{ version = $version; build_id = $id; source_commit = $sourceCommit; source_dirty = $sourceDirty; target = $BuildTarget; nsis = '3.13'; signed = $false; installer_sha256 = $hash; payload = $manifest } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath "$output.build.json" -Encoding utf8
 Write-Output $output

@@ -74,19 +74,20 @@ function Read-InstallJson([string] $Name) {
     return $value
 }
 
-function Assert-Manifest([object] $Manifest, [string] $Directory, [switch] $Installed) {
+function Assert-Manifest([object] $Manifest, [string] $Directory, [switch] $Installed, [switch] $RecoveryOnly) {
     if ($Manifest.schema -ne 1 -or $Manifest.protocol -ne 1 -or $Manifest.storage -ne 1 -or
         $Manifest.id -cnotmatch '^[a-f0-9]{64}$' -or $Manifest.version -notmatch '^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$') {
         throw 'Unsupported installer payload format.'
     }
     Assert-RegularPath $Directory $true
-    if ($Installed) { Assert-ProtectedDirectory $Directory }
+    if ($Installed) { Assert-ProtectedDirectory $Directory } else { Assert-ProtectedDirectory $Directory $false }
     $names = @($script:PayloadNames)
     if ($Installed) { $names += 'Uninstall.exe' }
     if (@($Manifest.files).Count -ne $names.Count) { throw 'Unexpected payload inventory.' }
     foreach ($name in $names) {
         $entries = @($Manifest.files | Where-Object { $_.name -ceq $name })
         if ($entries.Count -ne 1 -or $entries[0].sha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Invalid payload inventory.' }
+        if ($RecoveryOnly -and $name -cne 'quad9-service.exe') { continue }
         $path = Join-Path $Directory $name
         Assert-RegularPath $path
         if ($Installed) { Assert-TrustedAcl $path }
@@ -96,15 +97,16 @@ function Assert-Manifest([object] $Manifest, [string] $Directory, [switch] $Inst
 
 function Get-VersionPath([object] $Manifest) {
     if ($Manifest.id -cnotmatch '^[a-f0-9]{64}$') { throw 'Invalid installation identifier.' }
+    Assert-ProtectedDirectory (Join-Path $script:Root 'versions')
     return Join-Path (Join-Path $script:Root 'versions') $Manifest.id
 }
 
-function Get-CurrentManifest([object] $State) {
+function Get-CurrentManifest([object] $State, [switch] $RecoveryOnly) {
     if (-not $State.installed) { throw 'Quad9 Connect is not installed.' }
     Assert-ProtectedDirectory (Join-Path $script:Root 'versions')
     $versions = @($State.versions | Where-Object { $_.id -ceq $State.current })
     if ($versions.Count -ne 1) { throw 'The current installation is missing or ambiguous.' }
-    Assert-Manifest $versions[0] (Get-VersionPath $versions[0]) -Installed
+    Assert-Manifest $versions[0] (Get-VersionPath $versions[0]) -Installed -RecoveryOnly:$RecoveryOnly
     return $versions[0]
 }
 
@@ -127,8 +129,13 @@ function Stop-InstalledService([object[]] $Manifests) {
     if ($null -eq $identity) { return }
     $process = if ($identity.ProcessId) { Get-Process -Id $identity.ProcessId -ErrorAction SilentlyContinue } else { $null }
     $service = Get-Service -Name Quad9Connect
-    if ($service.Status -ne 'Stopped') { Stop-Service -Name Quad9Connect; $service.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30)) }
-    if ($process -and -not $process.WaitForExit(30000)) { throw 'The service has not exited. Recovery files and binaries have been retained.' }
+    try {
+        if ($service.Status -ne 'Stopped') { Stop-Service -Name Quad9Connect; $service.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30)) }
+        if ($process -and -not $process.WaitForExit(30000)) { throw 'The service has not exited. Recovery files and binaries have been retained.' }
+    } finally {
+        $service.Dispose()
+        if ($process) { $process.Dispose() }
+    }
 }
 
 function Set-ServiceVersion([object] $Manifest) {
@@ -144,7 +151,8 @@ function Set-ServiceVersion([object] $Manifest) {
 function Start-InstalledService([object] $Manifest, [switch] $AllowRecovery) {
     $null = Assert-ServiceIdentity @($Manifest)
     Start-Service -Name Quad9Connect
-    (Get-Service -Name Quad9Connect).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
+    $service = Get-Service -Name Quad9Connect
+    try { $service.WaitForStatus('Running', [TimeSpan]::FromSeconds(30)) } finally { $service.Dispose() }
     $binary = Join-Path (Get-VersionPath $Manifest) 'quad9-service.exe'
     $output = '{"version":1,"id":"installer-status","command":{"type":"get_status"}}' | & $binary request
     if ($LASTEXITCODE -ne 0) { throw 'The installed service is not responding. Repair is required.' }
@@ -160,14 +168,14 @@ function Invoke-Offline([object] $Manifest, [string] $Command) {
 function Set-MaintenanceGate {
     Assert-ProtectedDirectory $script:Data $false
     $path = Join-Path $script:Data 'installer-maintenance'
-    if (Test-Path -LiteralPath $path) { Assert-RegularPath $path; return }
+    if (Test-Path -LiteralPath $path) { Assert-RegularPath $path; Assert-TrustedAcl $path $false; return }
     $file = [IO.File]::Open($path, 'CreateNew', 'Write', 'None')
     try { $file.Flush($true) } finally { $file.Dispose() }
 }
 
 function Clear-MaintenanceGate {
     $path = Join-Path $script:Data 'installer-maintenance'
-    if (Test-Path -LiteralPath $path) { Assert-RegularPath $path; Remove-Item -LiteralPath $path }
+    if (Test-Path -LiteralPath $path) { Assert-RegularPath $path; Assert-TrustedAcl $path $false; Remove-Item -LiteralPath $path }
 }
 
 function Get-Enrollment([string] $Sid) {
@@ -326,10 +334,9 @@ function Install-Quad9Payload([string] $Payload, [string] $OperatorSid, [object]
 }
 
 function Uninstall-Quad9Payload([object] $State) {
-    $manifest = Get-CurrentManifest $State
-    # Validate every owned file before stopping the service or deleting anything.
-    Assert-ProtectedDirectory (Join-Path $script:Root 'versions')
-    foreach ($version in $State.versions) { Assert-Manifest $version (Get-VersionPath $version) -Installed }
+    # Only the current, authenticated recovery executable is required to restore.
+    # Damaged obsolete versions must not prevent restoration of active DNS.
+    $manifest = Get-CurrentManifest $State -RecoveryOnly
     $identity = Assert-ServiceIdentity @($manifest)
     Set-MaintenanceGate
     try {
@@ -350,17 +357,18 @@ function Uninstall-Quad9Payload([object] $State) {
 
 function Complete-Quad9Removal([object] $State) {
     if (Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue) { throw 'A service still exists. Refusing file removal.' }
+    if (Test-Path -LiteralPath $script:Data) { Assert-ProtectedDirectory $script:Data $false; Clear-MaintenanceGate }
     Undo-Enrollment $State.enrollment
     foreach ($version in $State.versions) {
         $directory = Get-VersionPath $version
         if (-not (Test-Path -LiteralPath $directory)) { continue }
-        Assert-ProtectedDirectory $directory
+        try { Assert-ProtectedDirectory $directory } catch { Write-Warning 'An unsafe obsolete directory was preserved.'; continue }
         foreach ($entry in $version.files) {
             if ($entry.name -cnotin @($script:PayloadNames + 'Uninstall.exe')) { throw 'Unknown installed file.' }
             $path = Join-Path $directory $entry.name
             if (Test-Path -LiteralPath $path) {
-                Assert-RegularPath $path
-                if ((Get-FileHash -LiteralPath $path).Hash -ine $entry.sha256) { throw 'Changed files were preserved. Inspect the installation before retrying removal.' }
+                try { Assert-RegularPath $path; Assert-TrustedAcl $path } catch { Write-Warning 'An unsafe installed file was preserved.'; continue }
+                if ((Get-FileHash -LiteralPath $path).Hash -ine $entry.sha256) { Write-Warning 'A changed installed file was preserved for inspection.'; continue }
                 Remove-Item -LiteralPath $path
             }
         }
@@ -370,6 +378,20 @@ function Complete-Quad9Removal([object] $State) {
     $menu = Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Quad9 Connect.lnk'
     if (Test-Path -LiteralPath $menu) { Assert-RegularPath $menu; Remove-Item -LiteralPath $menu }
     Write-Output 'Quad9 Connect was removed after DNS restoration. Protected recovery and installation metadata remain available for inspection.'
+}
+
+function Repair-Quad9Payload([object] $State) {
+    $manifest = Get-CurrentManifest $State -RecoveryOnly
+    $null = Assert-ServiceIdentity @($manifest)
+    Set-MaintenanceGate
+    try { Stop-InstalledService @($manifest); Invoke-Offline $manifest 'restore' }
+    finally {
+        $null = Assert-ServiceIdentity @($manifest)
+        Set-ServiceVersion $manifest
+        Start-Service -Name Quad9Connect
+        Clear-MaintenanceGate
+    }
+    Publish-Installation $State
 }
 
 function Invoke-Quad9Lifecycle([string] $Operation, [string] $Payload, [string] $OperatorSid) {
@@ -398,13 +420,7 @@ function Invoke-Quad9Lifecycle([string] $Operation, [string] $Payload, [string] 
                 if ($null -eq $state) { throw 'Installation metadata is missing. Use the matching installer to repair.' }
                 if ($state.installed) { Uninstall-Quad9Payload $state } else { Complete-Quad9Removal $state }
             }
-            'Repair' {
-                $manifest = Get-CurrentManifest $state
-                Set-MaintenanceGate
-                try { Stop-InstalledService @($manifest); Invoke-Offline $manifest 'restore' }
-                finally { Set-ServiceVersion $manifest; Start-Service -Name Quad9Connect; Clear-MaintenanceGate }
-                Publish-Installation $state
-            }
+            'Repair' { Repair-Quad9Payload $state }
             default { throw 'Unsupported lifecycle operation.' }
         }
     } finally { $lock.Dispose() }

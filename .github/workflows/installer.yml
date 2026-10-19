@@ -31,7 +31,7 @@ jobs:
       - name: Get checksum-pinned NSIS and build the unsigned installer
         run: |
           $nsis = ./scripts/Get-InstallerToolchain.ps1
-          $installer = ./scripts/Build-WindowsInstaller.ps1 -MakeNsis $nsis
+          $installer = ./scripts/Build-WindowsInstaller.ps1 -MakeNsis $nsis -BuildTarget x86_64-pc-windows-msvc
           "QUAD9_NSIS=$nsis" >> $env:GITHUB_ENV
           "QUAD9_INSTALLER=$installer" >> $env:GITHUB_ENV
       - name: Build the VM-only adapter fixture separately from the distributable
@@ -52,6 +52,7 @@ jobs:
           path: |
             artifacts/installer/*-setup.exe
             artifacts/installer/*.sha256
+            artifacts/installer/*.build.json
           retention-days: 14
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()

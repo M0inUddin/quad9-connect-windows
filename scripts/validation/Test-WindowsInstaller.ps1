@@ -28,7 +28,13 @@ $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powersh
 
 function Run-Setup([string] $Executable, [string] $Arguments, [int] $ExpectedExit = 0) {
     $process = Start-Process -FilePath $Executable -ArgumentList $Arguments -WindowStyle Hidden -Wait -PassThru
-    if ($process.ExitCode -ne $ExpectedExit) { throw "Setup exit $($process.ExitCode), expected $ExpectedExit. Executable: $Executable" }
+    if ($process.ExitCode -ne $ExpectedExit) {
+        foreach ($stage in Get-ChildItem -LiteralPath ([Environment]::GetFolderPath('ProgramFiles')) -Filter 'Quad9Connect-Setup-*' -Directory) {
+            $errorFile = Join-Path $stage.FullName 'lifecycle-error.txt'
+            if (Test-Path -LiteralPath $errorFile) { Get-Content -LiteralPath $errorFile | Write-Host }
+        }
+        throw "Setup exit $($process.ExitCode), expected $ExpectedExit. Executable: $Executable"
+    }
 }
 function State { return Get-Content -LiteralPath (Join-Path $root 'installation.json') -Raw | ConvertFrom-Json }
 function Current-Directory {
@@ -139,6 +145,13 @@ try {
     if (Test-Path -LiteralPath (Join-Path $root 'pending.json')) { throw 'Interrupted upgrade was not reconciled.' }
     Assert-Active
 
+    # Quarantine-like damage to a rejected, obsolete payload must not prevent
+    # current-version restoration or removal. Changed files remain for inspection.
+    $obsolete = @((State).versions | Where-Object version -eq '0.1.0-dev.rejected')[0]
+    $obsoleteDirectory = Join-Path $root ('versions\' + $obsolete.id)
+    [IO.File]::AppendAllText((Join-Path $obsoleteDirectory 'quad9-service.exe'), 'quarantined fixture')
+    Remove-Item -LiteralPath (Join-Path $obsoleteDirectory 'quad9-desktop.exe')
+
     # An external edit blocks uninstall and must remain untouched.
     [Quad9Validation.DnsApi]::Write([guid]$baseline.adapter_id, $false, '149.112.112.112,9.9.9.9', @())
     $uninstaller = Join-Path (Current-Directory) 'Uninstall.exe'
@@ -156,6 +169,7 @@ try {
     Assert-Baseline
     if ((Get-Service Quad9Connect -ErrorAction SilentlyContinue) -or (State).installed -or (Get-LocalGroup Quad9ConnectOperators -ErrorAction SilentlyContinue)) { throw 'Safe uninstall left installed resources or operator enrollment.' }
     if (-not (Test-Path -LiteralPath (Join-Path $data 'dns.journal.json'))) { throw 'Uninstall discarded the audit and recovery journal.' }
+    if (-not (Test-Path -LiteralPath (Join-Path $obsoleteDirectory 'quad9-service.exe'))) { throw 'Uninstall deleted a changed obsolete file.' }
     # Reinstall after removal must discard inventories of files already removed.
     Run-Setup $Installer ('/S /OPERATORSID=' + $user.SID.Value)
     Assert-Baseline

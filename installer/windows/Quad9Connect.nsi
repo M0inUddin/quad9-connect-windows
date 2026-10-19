@@ -27,6 +27,50 @@ Var UserCount
 Var Index
 Var Parameters
 Var Dialog
+Var Stage
+
+!macro CreateProtectedStage
+  # Create the directory atomically with an administrator/SYSTEM-only DACL.
+  # Its Program Files parent also prevents unelevated rename/delete races.
+  System::Call 'ole32::CoCreateGuid(g .r0) i .r1'
+  ${If} $1 != 0
+    SetErrorLevel 1
+    Quit
+  ${EndIf}
+  StrCpy $Stage "$PROGRAMFILES64\Quad9Connect-Setup-$0"
+  System::Call 'advapi32::ConvertStringSecurityDescriptorToSecurityDescriptorW(w "O:BAG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)", i 1, *p .r1, p 0) i .r3'
+  ${If} $3 == 0
+    StrCpy $Stage ""
+    SetErrorLevel 1
+    Quit
+  ${EndIf}
+  System::Call '*(i 12, p r1, i 0) p .r2'
+  System::Call 'kernel32::CreateDirectoryW(w "$Stage", p r2) i .r3'
+  System::Free $2
+  System::Call 'kernel32::LocalFree(p r1)'
+  ${If} $3 == 0
+    StrCpy $Stage ""
+    SetErrorLevel 1
+    Quit
+  ${EndIf}
+!macroend
+
+!macro CleanupStage
+  ${If} $Stage != ""
+    SetOutPath "$WINDIR"
+    # A fixed inventory only. Never recursively remove a computed directory.
+    Delete "$Stage\quad9-service.exe"
+    Delete "$Stage\quad9-desktop.exe"
+    Delete "$Stage\InstallerLifecycle.psm1"
+    Delete "$Stage\Manage-Quad9Installation.ps1"
+    Delete "$Stage\List-Operators.ps1"
+    Delete "$Stage\LICENSE.txt"
+    Delete "$Stage\payload.json"
+    Delete "$Stage\users.ini"
+    Delete "$Stage\Uninstall.exe"
+    RMDir "$Stage"
+  ${EndIf}
+!macroend
 
 !define MUI_WELCOMEPAGE_TEXT "This unsigned development build installs the community Quad9 Connect app and its privileged service.$\r$\n$\r$\nDNS stays unchanged until you enable it in the app. Upgrades preserve existing DNS management and recovery records.$\r$\n$\r$\nThis project is independent of Quad9."
 !insertmacro MUI_PAGE_WELCOME
@@ -49,7 +93,8 @@ Function .onInit
   ${DisableX64FSRedirection}
   SetRegView 64
   InitPluginsDir
-  SetOutPath "$PLUGINSDIR"
+  !insertmacro CreateProtectedStage
+  SetOutPath "$Stage"
   File "${PAYLOAD}\*"
   File "List-Operators.ps1"
   ${GetParameters} $Parameters
@@ -92,16 +137,16 @@ Function OperatorPage
   ${NSD_CreateDropList} 0 62u 100% 120u ""
   Pop $OperatorList
   ${NSD_CB_AddString} $OperatorList "Keep existing access (upgrades only)"
-  nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\List-Operators.ps1" -OutputPath "$PLUGINSDIR\users.ini"'
+  nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$Stage\List-Operators.ps1" -OutputPath "$Stage\users.ini"'
   Pop $0
   ${If} $0 != 0
     MessageBox MB_ICONSTOP "Could not list local users. Installation has stopped."
     Abort
   ${EndIf}
-  ReadINIStr $UserCount "$PLUGINSDIR\users.ini" Users count
+  ReadINIStr $UserCount "$Stage\users.ini" Users count
   StrCpy $Index 0
   ${While} $Index < $UserCount
-    ReadINIStr $0 "$PLUGINSDIR\users.ini" Users "name$Index"
+    ReadINIStr $0 "$Stage\users.ini" Users "name$Index"
     ${NSD_CB_AddString} $OperatorList $0
     IntOp $Index $Index + 1
   ${EndWhile}
@@ -113,7 +158,7 @@ Function OperatorLeave
   SendMessage $OperatorList ${CB_GETCURSEL} 0 0 $Index
   ${If} $Index > 0
     IntOp $Index $Index - 1
-    ReadINIStr $OperatorSid "$PLUGINSDIR\users.ini" Users "sid$Index"
+    ReadINIStr $OperatorSid "$Stage\users.ini" Users "sid$Index"
   ${Else}
     StrCpy $OperatorSid ""
     IfFileExists "$PROGRAMFILES64\Quad9Connect\installation.json" upgrade_selected
@@ -124,32 +169,51 @@ Function OperatorLeave
 FunctionEnd
 
 Section Install
-  SetOutPath "$PLUGINSDIR"
-  WriteUninstaller "$PLUGINSDIR\Uninstall.exe"
-  nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\Manage-Quad9Installation.ps1" -Operation Install -Payload "$PLUGINSDIR" -OperatorSid "$OperatorSid"'
+  SetOutPath "$Stage"
+  WriteUninstaller "$Stage\Uninstall.exe"
+  nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$Stage\Manage-Quad9Installation.ps1" -Operation Install -Payload "$Stage" -OperatorSid "$OperatorSid"'
   Pop $0
   ${If} $0 != 0
     MessageBox MB_OK|MB_ICONSTOP "Installation stopped. Review the details above. If rollback is pending, run the retained administrator Repair command before retrying." /SD IDOK
     SetErrorLevel 1
     Abort
   ${EndIf}
+  !insertmacro CleanupStage
 SectionEnd
+
+Function .onGUIEnd
+  !insertmacro CleanupStage
+FunctionEnd
+
+Function .onInstFailed
+  !insertmacro CleanupStage
+FunctionEnd
 
 Function un.onInit
   ${DisableX64FSRedirection}
   SetRegView 64
+  !insertmacro CreateProtectedStage
 FunctionEnd
 
 Section Uninstall
   InitPluginsDir
-  SetOutPath "$PLUGINSDIR"
+  SetOutPath "$Stage"
   File "InstallerLifecycle.psm1"
   File "Manage-Quad9Installation.ps1"
-  nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\Manage-Quad9Installation.ps1" -Operation Uninstall'
+  nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$Stage\Manage-Quad9Installation.ps1" -Operation Uninstall'
   Pop $0
   ${If} $0 != 0
     MessageBox MB_OK|MB_ICONSTOP "Removal stopped. The service and recovery records remain available. Resolve the reported conflict and retry, or run the administrator Repair command." /SD IDOK
     SetErrorLevel 1
     Abort
   ${EndIf}
+  !insertmacro CleanupStage
 SectionEnd
+
+Function un.onGUIEnd
+  !insertmacro CleanupStage
+FunctionEnd
+
+Function un.onUninstFailed
+  !insertmacro CleanupStage
+FunctionEnd

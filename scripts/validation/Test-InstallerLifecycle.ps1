@@ -21,6 +21,8 @@ try {
         # Ordinary user-owned directories cannot become trusted service roots.
         $owner = (Get-Acl -LiteralPath $Fixture).GetOwner([Security.Principal.SecurityIdentifier]).Value
         if ($owner -notin $script:Trusted) { Must-Fail { Assert-ProtectedDirectory $Fixture } }
+        # The positive inventory cases use an explicitly substituted test root.
+        function Assert-ProtectedDirectory([string] $Path) { Assert-RegularPath $Path $true }
         foreach ($name in $script:PayloadNames) { [IO.File]::WriteAllText((Join-Path $Fixture $name), $name) }
         $files = @($script:PayloadNames | ForEach-Object { [pscustomobject]@{ name = $_; sha256 = (Get-FileHash -LiteralPath (Join-Path $Fixture $_)).Hash } })
         $manifest = [pscustomobject]@{ schema = 1; protocol = 1; storage = 1; id = ('a' * 64); version = '0.1.0-dev'; files = $files }
@@ -73,6 +75,10 @@ try {
         $restored = Get-Content -LiteralPath (Join-Path $Fixture 'installation.json') -Raw | ConvertFrom-Json
         if ($restored.current -ne $manifest.id -or $restored.versions.Count -ne 2 -or ($script:Events -join ',') -cne 'stop,configure,healthy,ungate') { throw 'Failed upgrade did not restore the previous service without DNS writes.' }
         if (Test-Path -LiteralPath (Join-Path $Fixture 'pending.json')) { throw 'Successful rollback left a pending transaction.' }
+        $script:Events.Clear()
+        function Assert-ServiceIdentity { throw 'The SCM command was changed externally' }
+        Must-Fail { Repair-Quad9Payload $state }
+        if ($script:Events.Count) { throw 'Repair modified an unrelated service registration.' }
     } $fixture
     Write-Output 'Installer contract tests passed: payload integrity, unsafe paths, unsupported storage, blocked uninstall, and upgrade rollback.'
 } finally {
