@@ -132,7 +132,23 @@ foreach ($family in $baseline.families) {
     $actual = [Quad9Validation.DnsApi]::Read([guid]$baseline.adapter_id, $family.ipv6)
     if (([string]$actual.NameServer) -ne ([string]$family.snapshot.NameServer)) { throw 'Service validation left changed DNS settings.' }
 }
-& (Join-Path $PSScriptRoot '..\Uninstall-DevelopmentService.ps1')
+$removal = Join-Path $PSScriptRoot '..\Uninstall-DevelopmentService.ps1'
+$expectedHash = (Get-FileHash -LiteralPath $binary).Hash
+# Drop unreferenced controllers from the earlier test checks before deliberately
+# retaining one real SCM handle across deletion.
+[GC]::Collect()
+[GC]::WaitForPendingFinalizers()
+$heldService = Get-Service Quad9Connect
+$null = $heldService.ServiceHandle
+try {
+    $deferred = $false
+    try { & $removal -RemovalTimeoutSeconds 0 } catch { $deferred = $_.Exception.Message -like '*deletion did not finish*' }
+    if (-not $deferred -or -not (Test-Path -LiteralPath $binary) -or -not (Test-Path -LiteralPath $logPath)) { throw 'Pending SCM deletion must retain recovery binaries and logs.' }
+} finally { $heldService.Dispose() }
+$wrongHashRefused = $false
+try { & $removal -FinishPendingRemoval -ExpectedBinarySha256 ('0' * 64) } catch { $wrongHashRefused = $_.Exception.Message -like '*binary changed*' }
+if (-not $wrongHashRefused -or -not (Test-Path -LiteralPath $binary)) { throw 'Deferred cleanup accepted an unknown recovery binary.' }
+& $removal -FinishPendingRemoval -ExpectedBinarySha256 $expectedHash
 if (Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue) { throw 'Development service was not removed.' }
 if (Test-Path -LiteralPath $logPath) { throw 'Safe removal retained operational logs.' }
 Write-Output 'Service validation passed: standard operator control, unauthorized denial, private storage, bounded malformed frames, native enable/restore, durable retry after restart, and uninstall restoration.'

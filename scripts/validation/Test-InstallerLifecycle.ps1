@@ -145,6 +145,31 @@ try {
         function Get-Service { return [pscustomobject]@{ Status = 'Running' } }
         Must-Fail { Remove-Quad9OperationalLog }
         if (-not (Test-Path -LiteralPath (Join-Path $script:Data 'startup-events.v1.json'))) { throw 'Log cleanup ran while a service remained.' }
+        $script:PendingQueries = 2
+        $script:PendingController = [pscustomobject]@{ Disposals = 0 }
+        $script:PendingController | Add-Member -MemberType ScriptMethod -Name Dispose -Value { $this.Disposals++ }
+        function Get-Service {
+            if ($script:PendingQueries -gt 0) { $script:PendingQueries--; return $script:PendingController }
+            return $null
+        }
+        function Test-Path([string] $LiteralPath) {
+            if ($LiteralPath -eq 'HKLM:\SYSTEM\CurrentControlSet\Services\Quad9Connect') { return $script:PendingQueries -gt 0 }
+            Microsoft.PowerShell.Management\Test-Path -LiteralPath $LiteralPath
+        }
+        function Start-Sleep { }
+        Wait-Quad9ServiceRemoval
+        if ($script:PendingController.Disposals -ne 2) { throw 'Removal polling retained its own service handles.' }
+        function Get-Service { return $script:PendingController }
+        $pendingRefused = $false
+        try { Wait-Quad9ServiceRemoval 0 } catch { $pendingRefused = $_.Exception.Message -like '*deletion is pending*' }
+        if (-not $pendingRefused) { throw 'A deletion timeout must defer cleanup.' }
+        function Get-Service { return $null }
+        $script:PendingQueries = 1
+        $pendingRefused = $false
+        try { Wait-Quad9ServiceRemoval 0 } catch { $pendingRefused = $_.Exception.Message -like '*deletion is pending*' }
+        if (-not $pendingRefused) { throw 'A marked registry entry must still defer cleanup when OpenService no longer succeeds.' }
+        $script:PendingQueries = 0
+        Wait-Quad9ServiceRemoval 0
     } $fixture
     Write-Output 'Installer contract tests passed: payload integrity, unsafe paths, unsupported storage, blocked uninstall, and upgrade rollback.'
 } finally {
