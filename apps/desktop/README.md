@@ -12,6 +12,8 @@ npm ci
 npm run tauri dev
 ```
 
+Build a standalone development executable with `npm run tauri build -- --debug --no-bundle`. Direct Cargo builds need `--features custom-protocol` to embed the built frontend. CI uses that feature and publishes an unsigned development executable as an artifact, without a distribution installer or service installation.
+
 The app stays unprivileged. Install the service separately inside a disposable VM using the [service development guide](../../docs/service-development.md), then sign in again after operator enrollment. Without the service, the app shows "Service unavailable" and never offers an Enable mutation.
 
 Closing the window hides it to the tray. The tray opens the app, runs diagnostics, opens settings, restores DNS, or quits the interface. Quit leaves committed DNS settings and the service running. The native host serializes pipe calls and verifies service identity through the existing IPC client. A second app instance opens the original window.

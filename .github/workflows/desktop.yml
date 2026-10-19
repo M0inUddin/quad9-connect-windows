@@ -52,5 +52,10 @@ jobs:
       - run: npm run build
         working-directory: apps/desktop
       - run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check
-      - run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --locked -- -D warnings
-      - run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
+      - run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --features custom-protocol --locked -- -D warnings
+      - run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --features custom-protocol --locked
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: quad9-desktop-windows-development
+          path: apps/desktop/src-tauri/target/debug/quad9-desktop.exe
+          retention-days: 7
