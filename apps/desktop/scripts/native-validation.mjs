@@ -266,6 +266,7 @@ try {
         }),
       ).toBeVisible();
       report.lifecycle = {
+        ...report.lifecycle,
         retained_window_survived_close: true,
         stale_retention_release_ignored: true,
         idle_window_destroyed: true,
