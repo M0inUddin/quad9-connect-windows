@@ -154,6 +154,9 @@ test("capture review screenshots of the running UI", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Ready when you are" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Enable Quad9", exact: true }),
+  ).toBeVisible();
   await page.screenshot({
     path: "../../output/playwright/connection-light.png",
     fullPage: true,
@@ -170,6 +173,9 @@ test("capture review screenshots of the running UI", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Quad9 configured" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Turn off and restore DNS", exact: true }),
+  ).toBeEnabled();
   await page.screenshot({
     path: "../../output/playwright/configured-dark.png",
     fullPage: true,
@@ -181,6 +187,9 @@ test("capture review screenshots of the running UI", async ({ page }) => {
   await expect(
     page.getByText("DNS over HTTPS observed", { exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Run diagnostics", exact: true }),
+  ).toBeEnabled();
   await page.screenshot({
     path: "../../output/playwright/diagnostics-dark.png",
     fullPage: true,

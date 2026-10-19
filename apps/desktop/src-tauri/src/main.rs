@@ -5,7 +5,7 @@ use std::sync::{
     Arc, Mutex,
 };
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager,
 };
@@ -14,6 +14,7 @@ use tauri::{
 struct Host {
     gate: Arc<Mutex<()>>,
     restore: MenuItem<tauri::Wry>,
+    status: MenuItem<tauri::Wry>,
 }
 static NEXT: AtomicU64 = AtomicU64::new(0);
 fn request(command: Command) -> Request {
@@ -48,6 +49,7 @@ fn update_tray(app: &tauri::AppHandle, response: &Response) {
             "DNS management is off"
         };
         let _ = app.state::<Host>().restore.set_enabled(owned);
+        let _ = app.state::<Host>().status.set_text(label);
         if let Some(tray) = app.tray_by_id("quad9") {
             let _ = tray.set_tooltip(Some(format!("Quad9 Connect · {label}")));
         }
@@ -57,16 +59,27 @@ fn update_tray(app: &tauri::AppHandle, response: &Response) {
 async fn service_request(app: tauri::AppHandle, request: Request) -> Result<Response, String> {
     request.validate()?;
     let gate = app.state::<Host>().gate.clone();
-    let response = tauri::async_runtime::spawn_blocking(move || {
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let _guard = gate
             .lock()
             .map_err(|_| "The request coordinator is unavailable".to_owned())?;
         quad9_service::host::send(&request)
     })
     .await
-    .map_err(|e| e.to_string())??;
-    update_tray(&app, &response);
-    Ok(response)
+    .map_err(|e| e.to_string())
+    .and_then(|result| result);
+    match &result {
+        Ok(response) => update_tray(&app, response),
+        Err(_) => {
+            let host = app.state::<Host>();
+            let _ = host.restore.set_enabled(false);
+            let _ = host.status.set_text("Service unavailable");
+            if let Some(tray) = app.tray_by_id("quad9") {
+                let _ = tray.set_tooltip(Some("Quad9 Connect · Service unavailable"));
+            }
+        }
+    }
+    result
 }
 fn show(app: &tauri::AppHandle, view: &str) {
     if let Some(window) = app.get_webview_window("main") {
@@ -83,6 +96,9 @@ fn main() {
         }))
         .invoke_handler(tauri::generate_handler![service_request])
         .setup(|app| {
+            let title = MenuItem::new(app, "Quad9 Connect for Windows", false, None::<&str>)?;
+            let status = MenuItem::new(app, "Reading service state", false, None::<&str>)?;
+            let separator = PredefinedMenuItem::separator(app)?;
             let open = MenuItem::with_id(app, "open", "Open application", true, None::<&str>)?;
             let diagnostics =
                 MenuItem::with_id(app, "diagnostics", "Run diagnostics", true, None::<&str>)?;
@@ -95,10 +111,23 @@ fn main() {
                 None::<&str>,
             )?;
             let quit = MenuItem::with_id(app, "quit", "Quit interface", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &diagnostics, &settings, &restore, &quit])?;
+            let menu = Menu::with_items(
+                app,
+                &[
+                    &title,
+                    &status,
+                    &separator,
+                    &open,
+                    &diagnostics,
+                    &settings,
+                    &restore,
+                    &quit,
+                ],
+            )?;
             app.manage(Host {
                 gate: Arc::new(Mutex::new(())),
                 restore,
+                status,
             });
             TrayIconBuilder::with_id("quad9")
                 .icon(tauri::image::Image::from_bytes(include_bytes!(
