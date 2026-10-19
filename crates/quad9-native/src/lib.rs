@@ -7,6 +7,9 @@ use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
+#[cfg(any(windows, test))]
+mod dns_scope;
+
 #[cfg(windows)]
 mod dns_backend;
 #[cfg(windows)]

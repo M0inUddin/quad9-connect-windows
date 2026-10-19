@@ -17,6 +17,8 @@ Version 0.1 is under development. It is not a supported public release.
 
 The service rejects managed DNS policies, profile-specific settings, unknown encryption properties, unsupported adapters, uncovered active resolver scopes, and IPv6 without a preferred global address and gateway. These conservative checks require compatibility testing before broader support.
 
+Adapter inspection excludes the complete Windows IPv6 discovery-default list `fec0:0:0:ffff::1` through `::3` only when no static or profile DNS configuration exists and no machine IPv6 route covers any of those addresses. The software loopback may report these defaults without an IPv6 DNS settings object. Explicit settings, mixed lists, matching routes, and unknown routing/configuration remain active scopes. See Microsoft's [discovery-default description](https://download.microsoft.com/download/9/4/6/946958ef-7b86-4ddc-bfdb-c7ed2af4ce51/tcpip_fund.pdf) and [route table API](https://learn.microsoft.com/en-us/windows/win32/api/netioapi/nf-netioapi-getipforwardtable2). This classification does not change adapter or DNS settings.
+
 ## Validation
 
 Deterministic Rust tests cover transaction boundaries, external edits, missing adapters, unavailable storage, malformed requests, stale revisions, and retries after restart. Windows GNU builds and tests run locally. CI also uses Windows MSVC and Linux.
