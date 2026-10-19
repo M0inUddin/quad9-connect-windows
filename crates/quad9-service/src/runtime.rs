@@ -29,6 +29,8 @@ impl<B: ServiceBackend, S: JournalStore + StateStore> Controller<B, S> {
         let pending = state.receipts.iter().any(|r| r.response.is_none());
         let missing = (journal.is_none() && (state.journal_expected || pending))
             || (journal.is_some() && state.revision == 0);
+        let discovered_journal = journal.is_some() && !state.journal_expected;
+        state.journal_expected |= journal.is_some();
         let mut engine = Engine { backend, store };
         let mut recovery_blocked = missing;
         if !missing {
@@ -42,7 +44,7 @@ impl<B: ServiceBackend, S: JournalStore + StateStore> Controller<B, S> {
                 receipt.response = Some(Response::error(&receipt.request.id, "interrupted", "The service restarted during this request. Inspect status before issuing a new operation."));
             }
         }
-        if pending {
+        if pending || discovered_journal {
             engine.store.save_state(&state)?;
         }
         Ok(Self {

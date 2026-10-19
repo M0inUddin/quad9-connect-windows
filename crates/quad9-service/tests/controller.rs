@@ -253,6 +253,48 @@ fn interrupted_receipt_without_a_journal_is_not_a_fresh_install() {
 }
 
 #[test]
+fn discovered_journal_becomes_required_before_repairing_a_pending_receipt() {
+    let backend = Backend::default();
+    let state = State::default();
+    let mut controller = Controller::start(backend.clone(), state.clone()).unwrap();
+    state.0.borrow_mut().fail_completion = true;
+    error(
+        controller.dispatch(ACTOR, enable("one", 0)),
+        "receipt_unavailable",
+    );
+    drop(controller);
+    {
+        let mut saved = state.0.borrow_mut();
+        saved.fail_completion = false;
+        assert!(!saved.requests.journal_expected);
+        assert_eq!(
+            saved.journal.as_ref().unwrap().phase,
+            TransactionPhase::Committed
+        );
+    }
+    let mut restarted = Controller::start(backend.clone(), state.clone()).unwrap();
+    assert!(state.0.borrow().requests.journal_expected);
+    error(restarted.dispatch(ACTOR, enable("one", 0)), "interrupted");
+    state.0.borrow_mut().journal = None;
+    error(
+        restarted.dispatch(ACTOR, enable("two", 1)),
+        "recovery_required",
+    );
+    error(
+        restarted.dispatch(ACTOR, restore("three", 1)),
+        "recovery_required",
+    );
+    assert_eq!(backend.0.borrow().writes, 1);
+    drop(restarted);
+    let mut again = Controller::start(backend.clone(), state).unwrap();
+    error(
+        again.dispatch(ACTOR, enable("four", 1)),
+        "recovery_required",
+    );
+    assert_eq!(backend.0.borrow().writes, 1);
+}
+
+#[test]
 fn journal_disappearance_during_service_lifetime_blocks_enable_and_restore() {
     let backend = Backend::default();
     let state = State::default();
