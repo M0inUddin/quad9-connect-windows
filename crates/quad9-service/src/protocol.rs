@@ -131,6 +131,9 @@ pub struct AdapterSummary {
     pub exclusion_reason: Option<String>,
     pub ipv4_enabled: bool,
     pub ipv6_enabled: bool,
+    pub ipv6_usable: bool,
+    pub has_ipv4_dns: bool,
+    pub has_ipv6_dns: bool,
 }
 
 impl Response {

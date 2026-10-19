@@ -19,6 +19,9 @@ impl ServiceBackend for WindowsDnsBackend {
                         exclusion_reason: a.exclusion_reason,
                         ipv4_enabled: a.ipv4_enabled,
                         ipv6_enabled: a.ipv6_enabled,
+                        ipv6_usable: a.ipv6_usable,
+                        has_ipv4_dns: a.has_ipv4_dns,
+                        has_ipv6_dns: a.has_ipv6_dns,
                     })
                     .collect()
             })
