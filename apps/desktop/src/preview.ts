@@ -8,11 +8,11 @@ export function previewTransport(): Transport {
     type: "status",
     revision: 0,
     recovery_blocked: mode === "recovery",
-    observed_matches: mode === "configured",
+    observed_matches: mode === "configured" || mode === "slow-probe",
     journal:
-      mode === "configured" || mode === "recovery"
+      mode === "configured" || mode === "recovery" || mode === "slow-probe"
         ? {
-            phase: mode === "configured" ? "committed" : "recovery_required",
+            phase: mode === "recovery" ? "recovery_required" : "committed",
             targets: [
               { target: { adapter_id: id, family: "ipv4" }, phase: "applied" },
             ],
@@ -58,7 +58,14 @@ export function previewTransport(): Transport {
     window.dispatchEvent(
       new CustomEvent("quad9-preview-request", { detail: request }),
     );
-    await new Promise((resolve) => setTimeout(resolve, 140));
+    await new Promise((resolve) =>
+      setTimeout(
+        resolve,
+        mode === "slow-probe" && request.command.type === "run_diagnostics"
+          ? 1000
+          : 140,
+      ),
+    );
     if (mode === "unavailable")
       throw new Error(
         "The Quad9 service is not installed or could not be reached.",

@@ -2670,6 +2670,7 @@ name = "quad9-desktop"
 version = "0.1.0-dev"
 dependencies = [
  "quad9-core",
+ "quad9-native",
  "quad9-service",
  "serde_json",
  "tauri",

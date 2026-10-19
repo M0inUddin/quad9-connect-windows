@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
   connectionState,
   eligibleTargets,
@@ -95,6 +95,8 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   const [probe, setProbe] = useState<Probe | null>(null);
   const lock = useRef(false);
   const retry = useRef<Request | null>(null);
+  const observationEpoch = useRef(0);
+  const nativeGeneration = useRef(0);
   const state = connectionState(status);
   const owned =
     state === "configured" || state === "conflict" || state === "recovery";
@@ -112,15 +114,18 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   ];
 
   const refresh = useCallback(async () => {
+    const epoch = observationEpoch.current;
     const response = await send(makeRequest({ type: "get_status" }));
+    if (epoch !== observationEpoch.current) return;
     if (response.result.type !== "status")
       throw new Error(
         response.result.type === "error"
           ? response.result.message
           : "Unexpected service status response.",
       );
-    setStatus(response.result);
     const list = await send(makeRequest({ type: "list_adapters" }));
+    if (epoch !== observationEpoch.current) return;
+    setStatus(response.result);
     if (list.result.type === "adapters") {
       const current = list.result.adapters;
       setAdapters(current);
@@ -133,6 +138,13 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
     } else if (list.result.type === "error")
       throw new Error(list.result.message);
   }, [send]);
+
+  const invalidate = useCallback(() => {
+    observationEpoch.current++;
+    setProbe(null);
+    if (!document.hidden && !lock.current)
+      refresh().catch(() => setStatus(null));
+  }, [refresh]);
 
   useEffect(() => {
     let alive = true;
@@ -175,18 +187,41 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
       if (["connection", "diagnostics", "settings"].includes(event.payload))
         setView(event.payload as View);
     });
-    const changed = listen("service-changed", () => {
-      setProbe(null);
-      refresh().catch(() => setStatus(null));
+    const changed = listen("service-changed", invalidate);
+    const network = listen<number>("network-changed", (event) => {
+      nativeGeneration.current = Math.max(
+        nativeGeneration.current,
+        event.payload,
+      );
+      invalidate();
     });
+    const reportMonitorError = () =>
+      setError(
+        "Network monitoring is unavailable. Reopen the app after changing networks.",
+      );
+    const monitorError = listen<string>(
+      "network-monitor-error",
+      reportMonitorError,
+    );
+    // Registration may fail before the webview has installed its listeners.
+    invoke<string | null>("network_monitor_error")
+      .then((error) => {
+        if (error) reportMonitorError();
+      })
+      .catch(reportMonitorError);
     type TrayResult = { Ok: Response } | { Err: string };
-    const diagnostic = listen<TrayResult>("diagnostic-result", (event) => {
-      if ("Err" in event.payload) setError(event.payload.Err);
-      else if (event.payload.Ok.result.type === "diagnostics")
-        setProbe(event.payload.Ok.result.report);
-      else if (event.payload.Ok.result.type === "error")
-        setError(event.payload.Ok.result.message);
-    });
+    const diagnostic = listen<{ generation: number; result: TrayResult }>(
+      "diagnostic-result",
+      (event) => {
+        if (event.payload.generation < nativeGeneration.current) return;
+        const result = event.payload.result;
+        if ("Err" in result) setError(result.Err);
+        else if (result.Ok.result.type === "diagnostics")
+          setProbe(result.Ok.result.report);
+        else if (result.Ok.result.type === "error")
+          setError(result.Ok.result.message);
+      },
+    );
     const tray = listen<TrayResult>("tray-result", (event) => {
       if ("Err" in event.payload) setError(event.payload.Err);
       else if (event.payload.Ok.result.type === "error")
@@ -200,29 +235,29 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         );
     });
     return () => {
-      [unlisten, changed, diagnostic, tray].forEach((p) =>
-        p.then((fn) => fn()),
+      [unlisten, changed, network, monitorError, diagnostic, tray].forEach(
+        (p) => p.then((fn) => fn()),
       );
     };
-  }, [refresh]);
+  }, [invalidate]);
   useEffect(() => {
-    const invalidate = () => {
-      setProbe(null);
-      if (!document.hidden && !lock.current)
-        refresh().catch(() => setStatus(null));
-    };
     document.addEventListener("visibilitychange", invalidate);
     window.addEventListener("focus", invalidate);
+    window.addEventListener("online", invalidate);
+    window.addEventListener("offline", invalidate);
     return () => {
       document.removeEventListener("visibilitychange", invalidate);
       window.removeEventListener("focus", invalidate);
+      window.removeEventListener("online", invalidate);
+      window.removeEventListener("offline", invalidate);
     };
-  }, [refresh]);
+  }, [invalidate]);
 
   async function perform(command?: Command) {
     if (lock.current) return;
     lock.current = true;
     setError(null);
+    const epoch = observationEpoch.current;
     // Only the explicit Retry action may replay an uncertain mutation. A
     // read-only action must send its own command and leave that receipt pending.
     const request = command ? makeRequest(command) : retry.current;
@@ -254,7 +289,10 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
           throw new Error(
             `${response.result.message} (${response.result.code})`,
           );
-        if (response.result.type === "diagnostics")
+        if (
+          response.result.type === "diagnostics" &&
+          epoch === observationEpoch.current
+        )
           setProbe(response.result.report);
         if (response.result.type === "restored" && !response.result.complete)
           setError(

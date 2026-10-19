@@ -135,6 +135,68 @@ test("diagnostics cannot replay or consume an uncertain DNS mutation", async ({
   expect(mutations[0]).toEqual(mutations[1]);
 });
 
+test("network events clear an old diagnostic without rewriting DNS", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const calls: unknown[] = [];
+    Object.assign(window, { previewCalls: calls });
+    window.addEventListener("quad9-preview-request", (event) =>
+      calls.push((event as CustomEvent).detail),
+    );
+  });
+  await page.goto("/?preview=configured");
+  await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Run diagnostics", exact: true })
+    .click();
+  await expect(
+    page.getByText("DNS over HTTPS observed", { exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.getByText("Ready to check", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("DNS over HTTPS observed", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Run diagnostics", exact: true }),
+  ).toBeEnabled();
+  const calls: Request[] = await page.evaluate(
+    () => (window as unknown as { previewCalls: Request[] }).previewCalls,
+  );
+  expect(
+    calls.filter((c) =>
+      ["enable_quad9", "restore_previous_settings"].includes(c.command.type),
+    ),
+  ).toHaveLength(0);
+});
+
+test("a diagnostic completing after a network change stays invalidated", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.addEventListener("quad9-preview-request", (event) => {
+      if (
+        (event as CustomEvent<Request>).detail.command.type ===
+        "run_diagnostics"
+      )
+        setTimeout(() => window.dispatchEvent(new Event("offline")), 100);
+    });
+  });
+  await page.goto("/?preview=slow-probe");
+  await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Run diagnostics", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Run diagnostics", exact: true }),
+  ).toBeEnabled();
+  await expect(page.getByText("Ready to check", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("DNS over HTTPS observed", { exact: true }),
+  ).toHaveCount(0);
+});
+
 test("production browser content cannot activate sample service data", async ({
   page,
 }) => {

@@ -10,6 +10,8 @@ use thiserror::Error;
 #[cfg(windows)]
 mod dns_backend;
 #[cfg(windows)]
+pub mod network;
+#[cfg(windows)]
 pub mod service;
 #[cfg(windows)]
 mod windows;
