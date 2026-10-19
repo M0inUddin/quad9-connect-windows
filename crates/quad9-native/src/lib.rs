@@ -16,10 +16,12 @@ mod dns_backend;
 pub mod network;
 #[cfg(windows)]
 pub mod service;
+mod upstream;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
 pub use dns_backend::WindowsDnsBackend;
+pub use upstream::{probe_upstream, Outcome as UpstreamOutcome, UpstreamReport};
 
 #[cfg(windows)]
 pub fn replace_file(
@@ -176,6 +178,34 @@ pub struct ProbeReport {
     pub scope: &'static str,
 }
 
+/// Independent checks. Direct HTTPS never changes the system DNS observation.
+#[derive(Debug, Serialize)]
+pub struct DiagnosticsReport {
+    #[serde(flatten)]
+    pub system: ProbeReport,
+    pub direct_upstream: UpstreamReport,
+}
+
+pub fn probe_diagnostics() -> Result<DiagnosticsReport, NativeError> {
+    let deadline = std::time::Instant::now() + PROBE_TIMEOUT;
+    std::thread::scope(|scope| {
+        let direct = std::thread::Builder::new()
+            .name("quad9-direct-check".into())
+            .spawn_scoped(scope, || upstream::probe_until(deadline))
+            .map_err(|_| NativeError::InvalidData("Cannot start the direct check worker".into()))?;
+        let system = probe_system_resolver_with_timeout(
+            deadline.saturating_duration_since(std::time::Instant::now()),
+        );
+        let direct_upstream = direct
+            .join()
+            .map_err(|_| NativeError::InvalidData("Direct check worker failed".into()))??;
+        Ok(DiagnosticsReport {
+            system: system?,
+            direct_upstream,
+        })
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProbeOutcome {
@@ -208,8 +238,13 @@ pub fn classify_responses(values: &[String]) -> (ProbeOutcome, Option<ObservedTr
 
 /// A cancellable system-resolver diagnostic with at most one outstanding query.
 pub fn probe_system_resolver() -> Result<ProbeReport, NativeError> {
+    probe_system_resolver_with_timeout(PROBE_TIMEOUT)
+}
+
+fn probe_system_resolver_with_timeout(timeout: Duration) -> Result<ProbeReport, NativeError> {
     #[cfg(not(windows))]
     {
+        let _ = timeout;
         Err(NativeError::UnsupportedPlatform)
     }
     #[cfg(windows)]
@@ -220,7 +255,7 @@ pub fn probe_system_resolver() -> Result<ProbeReport, NativeError> {
             .unwrap_or_default()
             .as_secs();
         let start = Instant::now();
-        let (outcome, transport, error) = match windows::query_protocol(PROBE_TIMEOUT) {
+        let (outcome, transport, error) = match windows::query_protocol(timeout) {
             Ok(values) => {
                 let (outcome, transport) = classify_responses(&values);
                 (outcome, transport, None)

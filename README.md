@@ -16,8 +16,9 @@ Install Rust with rustup, then run:
 cargo test --workspace --locked
 cargo run --locked -p quad9-cli -- adapters
 cargo run --locked -p quad9-cli -- probe
+cargo run --locked -p quad9-cli -- upstream --json
 ```
 
-The inspection commands require Windows and do not change DNS. A probe result applies to that lookup only. See [CONTRIBUTING.md](CONTRIBUTING.md) for toolchain requirements, exit codes, checks, and the feature and bug-fix PR workflow.
+The inspection commands require Windows and do not change DNS. A probe result applies to that lookup only. The separate [direct HTTPS check](docs/direct-upstream-diagnostics.md) reports reachability without claiming system DNS protection. See [CONTRIBUTING.md](CONTRIBUTING.md) for toolchain requirements, exit codes, checks, and the feature and bug-fix PR workflow.
 
 See [LICENSE](LICENSE) for the GNU Affero General Public License, version 3.

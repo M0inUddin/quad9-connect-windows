@@ -1,12 +1,15 @@
-use quad9_native::{inspect_adapters, probe_system_resolver, ProbeOutcome};
+use quad9_native::{
+    inspect_adapters, probe_system_resolver, probe_upstream, ProbeOutcome, UpstreamOutcome,
+};
 use std::process::ExitCode;
 
 const HELP: &str = "Quad9 Connect for Windows 0.1 development diagnostics
 
-Usage: quad9-inspect <adapters|probe> [--json]
+Usage: quad9-inspect <adapters|probe|upstream> [--json]
 
   adapters   Inspect Windows adapter candidates and raw DNS settings
   probe      Make one fresh system-resolver lookup to proto.on.quad9.net.
+  upstream   Check fixed Quad9 IPv4/IPv6 HTTPS endpoints, independently.
   --json     Write a versioned JSON result to stdout
 
 This tool reads configuration. It cannot enable, restore, or reset DNS.
@@ -23,7 +26,7 @@ fn main() -> ExitCode {
     let valid = (args.len() == 1 || (args.len() == 2 && args[1] == "--json"))
         && args
             .first()
-            .is_some_and(|s| s == "adapters" || s == "probe");
+            .is_some_and(|s| s == "adapters" || s == "probe" || s == "upstream");
     if !valid {
         eprintln!("{HELP}");
         return ExitCode::from(2);
@@ -46,6 +49,29 @@ fn main() -> ExitCode {
 }
 
 fn run(command: &str, json: bool) -> Result<u8, Box<dyn std::error::Error>> {
+    if command == "upstream" {
+        let report = probe_upstream()?;
+        let code = if report
+            .endpoints
+            .iter()
+            .any(|endpoint| endpoint.outcome == UpstreamOutcome::HttpsResponse)
+        {
+            0
+        } else {
+            1
+        };
+        if json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(
+                    &serde_json::json!({"schema_version":1,"direct_upstream":report})
+                )?
+            );
+        } else {
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        return Ok(code);
+    }
     if command == "adapters" {
         let adapters = inspect_adapters()?;
         if json {
