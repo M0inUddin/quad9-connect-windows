@@ -50,6 +50,12 @@ older service without the optional result. Live endpoint compatibility still
 requires Windows 11 validation; disposable Server tests do not establish all
 physical network behavior.
 
+The disposable service validation also requests diagnostics through the real
+LocalSystem pipe using a fresh standard-user token. It rejects an unauthorized
+caller, checks both independent result fields without requiring Internet
+availability, and verifies the native DNS baseline and mutation revision remain
+unchanged.
+
 References: [Quad9 service addresses](https://docs.quad9.net/services/),
 [Quad9 HTTP/2 requirement](https://docs.quad9.net/FAQs/),
 [WinHTTP options](https://learn.microsoft.com/en-us/windows/win32/winhttp/option-flags),
