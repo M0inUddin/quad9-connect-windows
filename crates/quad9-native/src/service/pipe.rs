@@ -177,7 +177,7 @@ pub fn serve(
         let connected = operation(
             pipe.0,
             stop,
-            Instant::now() + Duration::from_secs(1),
+            Instant::now() + Duration::from_secs(30),
             |overlap| {
                 // SAFETY: pipe is live and overlap remains valid through completion.
                 unsafe { ConnectNamedPipe(pipe.0, overlap) }
@@ -185,7 +185,7 @@ pub fn serve(
         );
         if connected.is_ok() {
             let _ = (|| -> Result<(), NativeError> {
-                let request = read_frame(pipe.0, stop, Instant::now() + Duration::from_secs(5))?;
+                let request = read_frame(pipe.0, stop, Instant::now() + Duration::from_secs(15))?;
                 // authorize reverts impersonation before returning to this scope.
                 let actor = security.authorize(pipe.0)?;
                 let response = handle_request(&actor, &request);
@@ -200,7 +200,7 @@ pub fn serve(
                     pipe.0,
                     &mut ack,
                     stop,
-                    Instant::now() + Duration::from_secs(2),
+                    Instant::now() + Duration::from_secs(5),
                 )?;
                 if ack[0] != 0xa5 {
                     return Err(invalid("Invalid response acknowledgment"));
