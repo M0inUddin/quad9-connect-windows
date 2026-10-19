@@ -253,6 +253,11 @@ fn interface_context(
     if new_document == Some(true) && is_current_window(&app, &window) {
         host.document_id.fetch_add(1, Ordering::AcqRel);
         host.retention_sequence.store(0, Ordering::Release);
+        // A reload has discarded the old document's in-memory receipt. Its
+        // reservation must not keep the replacement webview alive forever.
+        let _ =
+            host.retention
+                .compare_exchange(RETAINED, IDLE, Ordering::AcqRel, Ordering::Acquire);
     }
     let document_id = host.document_id.load(Ordering::Acquire);
     let view = host.next_view.lock().unwrap().clone();

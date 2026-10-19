@@ -314,8 +314,18 @@ try {
         ).toBeVisible();
       }
       report.lifecycle.concurrent_release_reopen_cycles = 6;
+      // Reloading a retained document must also discard its obsolete lease.
+      await page.evaluate(async () => {
+        const context = await window.__TAURI_INTERNALS__.invoke("interface_context");
+        await window.__TAURI_INTERNALS__.invoke("retain_interface", {
+          retain: true, sequence: 5000, documentId: context.document_id,
+        });
+      });
+      await page.reload();
+      await expect(page.getByRole("status")).toHaveText(/Service unavailable|Ready when you are/);
       // Verify the rebuilt document can be closed again and the tray host survives.
       await closeWindow(page);
+      report.lifecycle.reload_discards_old_retention = true;
       expect(child.exitCode).toBe(null);
       console.log(
         "Native accessibility and close/reopen checks passed; no DNS mutation was sent.",
