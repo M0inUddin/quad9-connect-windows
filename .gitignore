@@ -38,3 +38,18 @@ next-env.d.ts
 # Rust build output and local diagnostics
 /target/
 *.diagnostics.json
+
+# Local validation output, recovery data, and installers
+/artifacts/
+/validation-output/
+/service-data/
+*.native-baseline.json
+*.journal.json
+*.journal.tmp
+*.journal.lock
+*.etl
+*.dmp
+*.msi
+*.msix
+*.msixbundle
+*.pdb
