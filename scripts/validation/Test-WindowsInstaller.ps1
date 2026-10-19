@@ -59,12 +59,17 @@ function Assert-Active {
     $response = Request @{ type = 'get_status' }
     if ($response.result.journal.phase -ne 'committed' -or -not $response.result.observed_matches) { throw 'Upgrade lost active DNS or its original recovery snapshot.' }
 }
+function Wait-Quad9State([string] $Status) {
+    $controller = Get-Service Quad9Connect
+    try { $controller.WaitForStatus($Status, [TimeSpan]::FromSeconds(30)) }
+    finally { $controller.Dispose() }
+}
 function Enable-VM {
     # Only the fixture binary permits a VM adapter. The distributable installer
     # always contains the production service and always registers `service`.
     $command = (Get-CimInstance Win32_Service -Filter "Name='Quad9Connect'").PathName
     Stop-Service -Name Quad9Connect
-    (Get-Service Quad9Connect).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+    Wait-Quad9State 'Stopped'
     $fixture = Join-Path $root 'vm-fixture'
     if (-not (Test-Path -LiteralPath $fixture)) { New-Item -ItemType Directory -Path $fixture | Out-Null }
     $fixtureBinary = Join-Path $fixture 'quad9-service.exe'
@@ -73,17 +78,17 @@ function Enable-VM {
     if ($changed.ReturnValue) { throw 'Could not configure VM fixture service.' }
     try {
         Start-Service Quad9Connect
-        (Get-Service Quad9Connect).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
+        Wait-Quad9State 'Running'
         $status = Request @{ type = 'get_status' }
         $enabled = Request @{ type = 'enable_quad9'; expected_revision = $status.result.revision; targets = @(@{ adapter_id = $baseline.adapter_id; family = 'ipv4' }) }
         if ($enabled.result.type -ne 'enabled') { throw ($enabled | ConvertTo-Json -Depth 8 -Compress) }
     } finally {
         Stop-Service Quad9Connect
-        (Get-Service Quad9Connect).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+        Wait-Quad9State 'Stopped'
         $changed = Invoke-CimMethod -InputObject (Get-CimInstance Win32_Service -Filter "Name='Quad9Connect'") -MethodName Change -Arguments @{ PathName = $command }
         if ($changed.ReturnValue) { throw 'Could not restore production service command.' }
         Start-Service Quad9Connect
-        (Get-Service Quad9Connect).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
+        Wait-Quad9State 'Running'
     }
     Assert-Active
 }

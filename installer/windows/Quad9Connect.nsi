@@ -92,6 +92,7 @@ Function .onInit
   ${EndIf}
   ${DisableX64FSRedirection}
   SetRegView 64
+  System::Call 'kernel32::SetEnvironmentVariableW(w "PSModulePath", w "$SYSDIR\WindowsPowerShell\v1.0\Modules") i .r0'
   InitPluginsDir
   !insertmacro CreateProtectedStage
   SetOutPath "$Stage"
@@ -192,6 +193,7 @@ FunctionEnd
 Function un.onInit
   ${DisableX64FSRedirection}
   SetRegView 64
+  System::Call 'kernel32::SetEnvironmentVariableW(w "PSModulePath", w "$SYSDIR\WindowsPowerShell\v1.0\Modules") i .r0'
   !insertmacro CreateProtectedStage
 FunctionEnd
 

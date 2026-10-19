@@ -1,5 +1,6 @@
 param([Parameter(Mandatory)][string] $OutputPath)
 $ErrorActionPreference = 'Stop'
+$env:PSModulePath = Join-Path $PSHOME 'Modules'
 $lines = [Collections.Generic.List[string]]::new()
 $lines.Add('[Users]')
 $users = @(Get-LocalUser | Where-Object Enabled | Sort-Object Name)
