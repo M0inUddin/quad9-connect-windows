@@ -2,10 +2,10 @@ name: Desktop UI
 
 on:
   pull_request:
-    paths: ['apps/desktop/**', 'crates/**', '.github/workflows/desktop.yml']
+    paths: ['apps/desktop/**', 'crates/**', 'scripts/validation/Measure-Quad9Resources.ps1', '.github/workflows/desktop.yml']
   push:
     branches: [main]
-    paths: ['apps/desktop/**', 'crates/**', '.github/workflows/desktop.yml']
+    paths: ['apps/desktop/**', 'crates/**', 'scripts/validation/Measure-Quad9Resources.ps1', '.github/workflows/desktop.yml']
 
 permissions:
   contents: read
@@ -54,9 +54,17 @@ jobs:
       - run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check
       - run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --features custom-protocol --locked -- -D warnings
       - run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --features custom-protocol --locked
+      - name: Check native startup diagnostic retention
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --features custom-protocol --locked
       - name: Exercise the actual native window and Rust IPC without a service
         working-directory: apps/desktop
         run: node scripts/native-smoke.mjs src-tauri/target/debug/quad9-desktop.exe
+      - name: Validate native accessibility and tray window recreation
+        working-directory: apps/desktop
+        run: node scripts/native-validation.mjs src-tauri/target/debug/quad9-desktop.exe
+      - name: Validate native resource counters under Windows PowerShell and PowerShell 7
+        working-directory: apps/desktop
+        run: node scripts/native-resources.mjs src-tauri/target/debug/quad9-desktop.exe ../../output/playwright/native-resources --desktop-only --counter-smoke --verify-pwsh --service-unavailable
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: quad9-desktop-windows-development
@@ -67,4 +75,13 @@ jobs:
         with:
           name: desktop-native-screenshot
           path: output/playwright/native-service-unavailable.png
+          retention-days: 7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: desktop-native-accessibility
+          path: |
+            output/playwright/native-validation/*.json
+            output/playwright/native-validation/*.png
+            output/playwright/native-resources/*.json
           retention-days: 7

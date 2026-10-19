@@ -3,5 +3,10 @@
   "identifier": "main",
   "description": "Bundled desktop window event access. No shell, HTTP, or filesystem plugins.",
   "windows": ["main"],
-  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-close",
+    "core:window:allow-is-visible"
+  ]
 }

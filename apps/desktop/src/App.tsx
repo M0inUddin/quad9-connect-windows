@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   connectionState,
   eligibleTargets,
@@ -21,6 +22,13 @@ import type {
 
 type View = "connection" | "diagnostics" | "settings";
 type MonitorFailure = { generation: number; message: string };
+type TrayResult = { Ok: Response } | { Err: string };
+type InterfaceContext = {
+  view: View;
+  document_id: number;
+  diagnostic_pending: boolean;
+  tray_result: TrayResult | null;
+};
 const copy = {
   off: [
     "Ready when you are",
@@ -96,6 +104,14 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   const [monitorUnavailable, setMonitorUnavailable] = useState(false);
   const [probe, setProbe] = useState<Probe | null>(null);
   const lock = useRef(false);
+  const actionActive = useRef(false);
+  const initializing = useRef(true);
+  const diagnosticQueued = useRef(false);
+  const retentionSequence = useRef(0);
+  const documentId = useRef<number | null>(null);
+  const nativeListenersReady = useRef<Promise<void>>(Promise.resolve());
+  const handshakeReady = useRef(false);
+  const navigationPending = useRef(false);
   const retry = useRef<Request | null>(null);
   const observationEpoch = useRef(0);
   const nativeGeneration = useRef(0);
@@ -148,23 +164,6 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
     if (lock.current) refreshPending.current = true;
     else if (!document.hidden) refresh().catch(() => setStatus(null));
   }, [refresh]);
-
-  useEffect(() => {
-    let alive = true;
-    refresh()
-      .catch((e) => {
-        if (alive) {
-          setStatus(null);
-          setError(String(e.message ?? e));
-        }
-      })
-      .finally(() => {
-        if (alive) setBusy(null);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [refresh]);
   useEffect(() => {
     try {
       localStorage.setItem("quad9-preferences-v1", JSON.stringify(prefs));
@@ -186,9 +185,25 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   }, [prefs]);
   useEffect(() => {
     if (!isTauri()) return;
+    handshakeReady.current = false;
     const unlisten = listen<string>("navigate", (event) => {
-      if (["connection", "diagnostics", "settings"].includes(event.payload))
+      if (["connection", "diagnostics", "settings"].includes(event.payload)) {
         setView(event.payload as View);
+        // The initial new-document handshake resets the previous document's
+        // reservation. Leave native pending work untouched until that reset.
+        if (!handshakeReady.current) {
+          navigationPending.current = true;
+          return;
+        }
+        // Consume the saved tray receipt in an existing window too, so it
+        // cannot reappear as a stale error after a later window recreation.
+        void invoke<InterfaceContext>("interface_context")
+          .then((context) => {
+            if (context?.tray_result) acceptTrayResult(context.tray_result);
+            if (context?.diagnostic_pending) requestTrayDiagnostic();
+          })
+          .catch((error) => setError(String(error)));
+      }
     });
     const changed = listen("service-changed", invalidate);
     const network = listen<number>("network-changed", (event) => {
@@ -217,7 +232,6 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         if (error) reportMonitorError(error);
       })
       .catch(() => reportMonitorError());
-    type TrayResult = { Ok: Response } | { Err: string };
     const diagnostic = listen<{ generation: number; result: TrayResult }>(
       "diagnostic-result",
       (event) => {
@@ -231,24 +245,86 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
           setError(result.Ok.result.message);
       },
     );
-    const tray = listen<TrayResult>("tray-result", (event) => {
-      if ("Err" in event.payload) setError(event.payload.Err);
-      else if (event.payload.Ok.result.type === "error")
-        setError(event.payload.Ok.result.message);
-      else if (
-        event.payload.Ok.result.type === "restored" &&
-        !event.payload.Ok.result.complete
-      )
-        setError(
-          `Restoration is incomplete. ${event.payload.Ok.result.issues.join(" ")}`,
-        );
-    });
+    const tray = listen<TrayResult>("tray-result", (event) =>
+      acceptTrayResult(event.payload),
+    );
+    nativeListenersReady.current = Promise.all([
+      unlisten,
+      changed,
+      network,
+      monitorError,
+      diagnostic,
+      tray,
+    ]).then(() => {});
+    const close = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.key.toLowerCase() === "w") {
+        event.preventDefault();
+        void getCurrentWindow().close();
+      }
+    };
+    window.addEventListener("keydown", close);
     return () => {
+      window.removeEventListener("keydown", close);
       [unlisten, changed, network, monitorError, diagnostic, tray].forEach(
         (p) => p.then((fn) => fn()),
       );
     };
   }, [invalidate]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (isTauri()) {
+        await nativeListenersReady.current;
+        if (!alive) return;
+        const context = await invoke<InterfaceContext>("interface_context", {
+          newDocument: true,
+        });
+        if (context) {
+          documentId.current = context.document_id;
+          if (!navigationPending.current) setView(context.view);
+          if (context.tray_result) acceptTrayResult(context.tray_result);
+          if (context.diagnostic_pending) diagnosticQueued.current = true;
+          handshakeReady.current = true;
+          if (navigationPending.current) {
+            navigationPending.current = false;
+            const pending = await invoke<InterfaceContext>("interface_context");
+            if (pending?.tray_result) acceptTrayResult(pending.tray_result);
+            if (pending?.diagnostic_pending) diagnosticQueued.current = true;
+          }
+          await refresh();
+          return;
+        }
+      }
+      await refresh();
+    })()
+      .catch((e) => {
+        if (alive) {
+          setStatus(null);
+          setError(String(e.message ?? e));
+        }
+      })
+      .finally(() => {
+        if (alive) {
+          initializing.current = false;
+          if (diagnosticQueued.current) requestTrayDiagnostic();
+          else setBusy(null);
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [refresh]);
+
+  function acceptTrayResult(result: TrayResult) {
+    if ("Err" in result) setError(result.Err);
+    else if (result.Ok.result.type === "error")
+      setError(result.Ok.result.message);
+    else if (result.Ok.result.type === "restored" && !result.Ok.result.complete)
+      setError(
+        `Restoration is incomplete. ${result.Ok.result.issues.join(" ")}`,
+      );
+  }
   useEffect(() => {
     document.addEventListener("visibilitychange", invalidate);
     window.addEventListener("focus", invalidate);
@@ -262,14 +338,23 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
     };
   }, [invalidate]);
 
+  function requestTrayDiagnostic() {
+    diagnosticQueued.current = true;
+    if (initializing.current || actionActive.current) return;
+    diagnosticQueued.current = false;
+    void perform({ type: "run_diagnostics" });
+  }
+
   async function perform(command?: Command) {
-    if (lock.current) return;
+    if (actionActive.current) return;
+    actionActive.current = true;
     lock.current = true;
     setError(null);
     const epoch = observationEpoch.current;
     // Only the explicit Retry action may replay an uncertain mutation. A
     // read-only action must send its own command and leave that receipt pending.
     const request = command ? makeRequest(command) : retry.current;
+    if (request?.command.type === "run_diagnostics") setProbe(null);
     setBusy(
       request?.command.type === "run_diagnostics"
         ? "Checking the system resolver"
@@ -280,6 +365,13 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
             : "Connecting to service",
     );
     try {
+      // A closed busy window keeps its response and exact retry receipt alive.
+      if (isTauri())
+        await invoke("retain_interface", {
+          retain: true,
+          sequence: ++retentionSequence.current,
+          documentId: documentId.current,
+        });
       if (request) {
         const mutation =
           request.command.type === "enable_quad9" ||
@@ -326,7 +418,20 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
           setStatus(null);
         }
       }
-      setBusy(null);
+      actionActive.current = false;
+      if (diagnosticQueued.current) {
+        // Coalesce tray requests and keep the retained document across the
+        // handoff, including the final replacement read of the earlier action.
+        if (!initializing.current) requestTrayDiagnostic();
+      } else {
+        setBusy(null);
+        if (isTauri() && !retry.current)
+          void invoke("retain_interface", {
+            retain: false,
+            sequence: ++retentionSequence.current,
+            documentId: documentId.current,
+          }).catch(() => {});
+      }
     }
   }
 
@@ -638,15 +743,15 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
                 </p>
               )}
               {adapters.map((adapter) => (
-                <div
+                <fieldset
                   className={`adapter ${!adapter.candidate ? "excluded" : ""}`}
                   key={adapter.id}
                 >
-                  <div className="adapter-heading">
+                  <legend className="adapter-heading">
                     <Icon name="network" />
                     <strong>{adapter.name}</strong>
                     <span>{adapter.candidate ? "Available" : "Excluded"}</span>
-                  </div>
+                  </legend>
                   {adapter.candidate ? (
                     <>
                       <div className="family-choices">
@@ -685,7 +790,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
                   ) : (
                     <small>{adapter.exclusion_reason}</small>
                   )}
-                </div>
+                </fieldset>
               ))}
             </div>
             {owned && (
@@ -711,7 +816,10 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         <span className="footer-right">Independent community client</span>
       </footer>
       <div className="sr-only" role="status" aria-live="polite">
-        {busy ?? copy[state][0]}
+        {busy ??
+          (probe
+            ? `Diagnostic complete. ${probe.outcome === "doh_observed" ? "DNS over HTTPS observed" : `Could not verify DoH. ${probe.outcome.replaceAll("_", " ")}`}`
+            : copy[state][0])}
       </div>
     </div>
   );

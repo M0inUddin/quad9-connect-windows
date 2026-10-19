@@ -12,11 +12,11 @@ npm ci
 npm run tauri dev
 ```
 
-Build a standalone development executable with `npm run tauri build -- --debug --no-bundle`. Direct Cargo builds need `--features custom-protocol` to embed the built frontend. CI uses that feature and publishes an unsigned development executable as an artifact, without a distribution installer or service installation.
+Build a standalone development executable with `npm run tauri build -- --debug --no-bundle`. Direct Cargo builds need `--features custom-protocol` to embed the built frontend. Desktop CI publishes a standalone unsigned executable. The separate installer workflow builds and validates the development installer and its service lifecycle.
 
-The app stays unprivileged. Install the service separately inside a disposable VM using the [service development guide](../../docs/service-development.md), then sign in again after operator enrollment. Without the service, the app shows "Service unavailable" and never offers an Enable mutation.
+The app normally runs unprivileged. Use the [development installer](../../docs/windows-installer.md) or install the service inside a disposable VM using the [service development guide](../../docs/service-development.md), then sign in again after operator enrollment. Without the service, the app shows "Service unavailable" and never offers an Enable mutation.
 
-Closing the window hides it to the tray. The tray opens the app, runs diagnostics, opens settings, restores DNS, or quits the interface. Quit leaves committed DNS settings and the service running. The native host serializes pipe calls and verifies service identity through the existing IPC client. A second app instance opens the original window.
+Closing an idle window, or pressing Ctrl+W, releases its webview and keeps the native tray running. Opening the app recreates the window with saved preferences. An in-flight operation or uncertain mutation receipt keeps its hidden document until resolved. The tray opens the app, runs diagnostics, opens settings, restores DNS, or quits the interface. Quit leaves committed DNS settings and the service running. The native host serializes pipe calls and verifies service identity through the existing IPC client. A second app instance opens the original host.
 
 ## Browser preview and tests
 
@@ -35,8 +35,12 @@ Tests cover status precedence, corrupt preferences, explicit selection, enable/r
 
 `node scripts/native-smoke.mjs src-tauri/target/debug/quad9-desktop.exe` starts the actual packaged Windows app with an isolated WebView2 profile and a temporary local debugging port. It checks embedded assets, real Tauri-to-Rust IPC, the unavailable-service path, disabled Enable, theme selection, and a native screenshot. It expects the service to be absent and changes no DNS settings. The helper terminates only its own app process. Its profile and generated screenshot remain under ignored validation output.
 
+`node scripts/native-validation.mjs <desktop.exe> 20 <output-directory>` checks native accessibility, process-cold startup, retained-document safety, preference persistence, and close/reopen behavior. `node scripts/native-resources.mjs <desktop.exe> <output-directory>` samples the installed service and complete desktop process tree in window and tray modes. It settles each mode for 30 seconds and samples for five minutes. Run desktop tests unelevated with DNS management off and an authorized operator token. Perform administrator setup and cleanup separately; elevated WebView2 hosts ignore the driver's diagnostic environment flags.
+
+`--desktop-only --service-unavailable` measures the desktop with the service absent and leaves complete-process budgets unassessed. Add `--counter-smoke --verify-pwsh` for a short compatibility check under both PowerShell editions. `--service-unavailable` can also assert an inaccessible installed service while retaining its process counters, after a separate administrator check confirms DNS management is off. See [measurement methods and results](../../docs/performance-accessibility.md).
+
 ## Current limits
 
-The interface deliberately says "Quad9 configured" for matching saved settings. A separate result describes one system-resolver lookup, with its time and duration. It does not claim every application uses encrypted DNS. Successful results are cleared when the window regains focus; native network-event invalidation and full Windows 11 validation remain release work.
+The interface deliberately says "Quad9 configured" for matching saved settings. A separate result describes one system-resolver lookup, with its time and duration. It does not claim every application uses encrypted DNS. Successful results are cleared when a new check starts, the window regains focus, or a native network event invalidates them. Full Windows 11 compatibility validation remains release work.
 
-There is no distribution installer yet. Autostart preferences, native notifications, and a public signed package are not implemented. Light/dark/system themes and selected adapters are local per-user preferences. [Artwork provenance and terms](ASSETS.md) are recorded separately from the source license.
+An [unsigned development installer](../../docs/windows-installer.md) installs the service and handles upgrades, repair, and safe removal. Autostart preferences, native notifications, and a public signed package are not implemented. Light/dark/system themes and selected adapters are local per-user preferences. [Artwork provenance and terms](ASSETS.md) are recorded separately from the source license.

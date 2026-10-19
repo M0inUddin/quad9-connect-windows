@@ -2,8 +2,8 @@
 use quad9_service::client::{ClientCoordinator, ObservedResponse};
 use quad9_service::protocol::{Command, Request, Response, ResultBody};
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc, Mutex,
+    atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
+    Arc, Condvar, Mutex,
 };
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -24,8 +24,57 @@ struct Host {
     status: MenuItem<tauri::Wry>,
     stop: Arc<AtomicBool>,
     monitor_error: Arc<Mutex<Option<MonitorFailure>>>,
+    retention: Arc<AtomicU8>,
+    retention_sequence: Arc<AtomicU64>,
+    document_id: Arc<AtomicU64>,
+    visibility_request: Arc<AtomicU64>,
+    diagnostic_pending: Arc<AtomicBool>,
+    window_transition: Arc<Mutex<()>>,
+    destroyed: Arc<(Mutex<u64>, Condvar)>,
+    next_view: Arc<Mutex<String>>,
+    tray_result: Arc<Mutex<Option<Result<Response, String>>>>,
 }
 static NEXT: AtomicU64 = AtomicU64::new(0);
+const IDLE: u8 = 0;
+const RETAINED: u8 = 1;
+const DESTROYING: u8 = 2;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_diagnostic_keeps_a_mounting_document_alive() {
+        let pending = AtomicBool::new(true);
+        let retention = AtomicU8::new(IDLE);
+        assert!(reserve_pending_diagnostic(&pending, &retention));
+        assert_eq!(retention.load(Ordering::Acquire), RETAINED);
+        assert!(!pending.load(Ordering::Acquire));
+        assert!(retention
+            .compare_exchange(IDLE, DESTROYING, Ordering::AcqRel, Ordering::Acquire)
+            .is_err());
+    }
+
+    #[test]
+    fn closing_document_leaves_diagnostic_for_its_replacement() {
+        let pending = AtomicBool::new(true);
+        let retention = AtomicU8::new(DESTROYING);
+        assert!(!reserve_pending_diagnostic(&pending, &retention));
+        assert!(pending.load(Ordering::Acquire));
+        assert_eq!(retention.load(Ordering::Acquire), DESTROYING);
+        retention.store(IDLE, Ordering::Release);
+        assert!(reserve_pending_diagnostic(&pending, &retention));
+        assert_eq!(retention.load(Ordering::Acquire), RETAINED);
+    }
+
+    #[test]
+    fn navigation_without_a_diagnostic_does_not_retain_the_window() {
+        let pending = AtomicBool::new(false);
+        let retention = AtomicU8::new(IDLE);
+        assert!(!reserve_pending_diagnostic(&pending, &retention));
+        assert_eq!(retention.load(Ordering::Acquire), IDLE);
+    }
+}
 fn request(command: Command) -> Request {
     let time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -186,13 +235,214 @@ async fn observed_service_request(
     }
     result
 }
-fn show(app: &tauri::AppHandle, view: &str) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
+#[derive(serde::Serialize)]
+struct InterfaceContext {
+    view: String,
+    document_id: u64,
+    diagnostic_pending: bool,
+    tray_result: Option<Result<Response, String>>,
+}
+
+#[tauri::command]
+fn interface_context(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    new_document: Option<bool>,
+) -> InterfaceContext {
+    let host = app.state::<Host>();
+    if new_document == Some(true) && is_current_window(&app, &window) {
+        host.document_id.fetch_add(1, Ordering::AcqRel);
+        host.retention_sequence.store(0, Ordering::Release);
+        // A reload has discarded the old document's in-memory receipt. Its
+        // reservation must not keep the replacement webview alive forever.
+        let _ =
+            host.retention
+                .compare_exchange(RETAINED, IDLE, Ordering::AcqRel, Ordering::Acquire);
     }
-    let _ = app.emit("navigate", view);
+    let document_id = host.document_id.load(Ordering::Acquire);
+    let view = host.next_view.lock().unwrap().clone();
+    let tray_result = host.tray_result.lock().unwrap().take();
+    // A startup status read may still be pending when the user closes. Keep
+    // that document alive before acknowledging its queued diagnostic.
+    let diagnostic_pending = is_current_window(&app, &window)
+        && reserve_pending_diagnostic(&host.diagnostic_pending, &host.retention);
+    InterfaceContext {
+        view,
+        document_id,
+        diagnostic_pending,
+        tray_result,
+    }
+}
+
+fn reserve_pending_diagnostic(pending: &AtomicBool, retention: &AtomicU8) -> bool {
+    if !pending.load(Ordering::Acquire) {
+        return false;
+    }
+    if retention
+        .try_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+            (current != DESTROYING).then_some(RETAINED)
+        })
+        .is_err()
+    {
+        return false;
+    }
+    pending.swap(false, Ordering::AcqRel)
+}
+
+#[tauri::command]
+fn retain_interface(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    retain: bool,
+    sequence: Option<u64>,
+    document_id: Option<u64>,
+) -> Result<(), String> {
+    // Synchronous IPC records retention before a later CloseRequested can
+    // dispatch a worker. Destruction atomically claims IDLE, so an accepted
+    // busy reservation can never lose its document to a queued destroy.
+    let host = app.state::<Host>();
+    if !is_current_window(&app, &window) {
+        return Err("The requesting interface has already closed".into());
+    }
+    if document_id.is_some_and(|id| id != host.document_id.load(Ordering::Acquire)) {
+        return Err("The requesting document has already been replaced".into());
+    }
+    if let Some(sequence) = sequence {
+        if sequence <= host.retention_sequence.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        host.retention_sequence.store(sequence, Ordering::Release);
+    }
+    host.retention
+        .try_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+            (current != DESTROYING).then_some(if retain { RETAINED } else { IDLE })
+        })
+        .map_err(|_| "The requesting interface is already closing".to_owned())?;
+    if !retain {
+        std::thread::spawn(move || {
+            let result = (|| -> Result<(), String> {
+                let host = app.state::<Host>();
+                let _transition = host.window_transition.lock().map_err(|e| e.to_string())?;
+                if is_current_window(&app, &window) && matches!(window.is_visible(), Ok(false)) {
+                    destroy_window(&app, &window)?;
+                }
+                Ok(())
+            })();
+            if let Err(error) = result {
+                eprintln!("Could not release interface: {error}");
+            }
+        });
+    }
+    Ok(())
+}
+
+fn is_current_window(app: &tauri::AppHandle, window: &tauri::Window) -> bool {
+    match (
+        app.get_webview_window("main")
+            .and_then(|current| current.hwnd().ok()),
+        window.hwnd().ok(),
+    ) {
+        (Some(current), Some(candidate)) => current == candidate,
+        _ => false,
+    }
+}
+
+// Called only off the event thread, with window_transition held. A queued
+// destroy is not complete until Tauri has removed the old window from its
+// manager. The run callback signals that removal before a reopen can proceed.
+fn destroy_window(app: &tauri::AppHandle, window: &tauri::Window) -> Result<(), String> {
+    let host = app.state::<Host>();
+    if host
+        .retention
+        .compare_exchange(IDLE, DESTROYING, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return Ok(());
+    }
+    let result = (|| {
+        let (generation, changed) = &*host.destroyed;
+        let before = *generation.lock().map_err(|e| e.to_string())?;
+        window.destroy().map_err(|e| e.to_string())?;
+        let current = generation.lock().map_err(|e| e.to_string())?;
+        let (_completed, timeout) = changed
+            .wait_timeout_while(current, std::time::Duration::from_secs(10), |value| {
+                *value == before
+            })
+            .map_err(|e| e.to_string())?;
+        if timeout.timed_out() {
+            return Err("Window destruction did not finish before its deadline".into());
+        }
+        Ok(())
+    })();
+    host.retention.store(IDLE, Ordering::Release);
+    result
+}
+
+fn hide_interface(window: tauri::Window) {
+    let app = window.app_handle().clone();
+    let request = app
+        .state::<Host>()
+        .visibility_request
+        .fetch_add(1, Ordering::AcqRel)
+        + 1;
+    std::thread::spawn(move || {
+        let result = (|| -> Result<(), String> {
+            let host = app.state::<Host>();
+            let _transition = host.window_transition.lock().map_err(|e| e.to_string())?;
+            if request != host.visibility_request.load(Ordering::Acquire)
+                || !is_current_window(&app, &window)
+            {
+                return Ok(());
+            }
+            window.hide().map_err(|e| e.to_string())?;
+            destroy_window(&app, &window)?;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            eprintln!("Could not hide interface: {error}");
+        }
+    });
+}
+
+fn show(app: &tauri::AppHandle, view: &str) {
+    let host = app.state::<Host>();
+    *host.next_view.lock().unwrap() = view.to_owned();
+    if view == "diagnostics" {
+        host.diagnostic_pending.store(true, Ordering::Release);
+    }
+    let request = host.visibility_request.fetch_add(1, Ordering::AcqRel) + 1;
+    let app = app.clone();
+    // WebView2 window creation must not block the Windows event thread.
+    std::thread::spawn(move || {
+        let result = (|| -> Result<(), String> {
+            let host = app.state::<Host>();
+            let _transition = host.window_transition.lock().map_err(|e| e.to_string())?;
+            if request != host.visibility_request.load(Ordering::Acquire) {
+                return Ok(());
+            }
+            show_window(&app).map_err(|e| e.to_string())
+        })();
+        if let Err(error) = result {
+            eprintln!("Could not open interface: {error}");
+        }
+    });
+}
+
+fn show_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.show()?;
+        window.unminimize()?;
+        window.set_focus()?;
+        let view = app.state::<Host>().next_view.lock().unwrap().clone();
+        app.emit("navigate", view)?;
+    } else {
+        app.state::<Host>()
+            .retention_sequence
+            .store(0, Ordering::Release);
+        tauri::WebviewWindowBuilder::from_config(app, &app.config().app.windows[0])?.build()?;
+        // The new frontend reads interface_context after mounting.
+    }
+    Ok(())
 }
 fn main() {
     tauri::Builder::default()
@@ -201,7 +451,9 @@ fn main() {
         }))
         .invoke_handler(tauri::generate_handler![
             service_request,
-            network_monitor_error
+            network_monitor_error,
+            interface_context,
+            retain_interface
         ])
         .setup(|app| {
             let title = MenuItem::new(app, "Quad9 Connect for Windows", false, None::<&str>)?;
@@ -238,6 +490,15 @@ fn main() {
                 status,
                 stop: Arc::new(AtomicBool::new(false)),
                 monitor_error: Arc::new(Mutex::new(None)),
+                retention: Arc::new(AtomicU8::new(IDLE)),
+                retention_sequence: Arc::new(AtomicU64::new(0)),
+                document_id: Arc::new(AtomicU64::new(0)),
+                visibility_request: Arc::new(AtomicU64::new(0)),
+                diagnostic_pending: Arc::new(AtomicBool::new(false)),
+                window_transition: Arc::new(Mutex::new(())),
+                destroyed: Arc::new((Mutex::new(0), Condvar::new())),
+                next_view: Arc::new(Mutex::new("connection".into())),
+                tray_result: Arc::new(Mutex::new(None)),
             });
             TrayIconBuilder::with_id("quad9")
                 .icon(tauri::image::Image::from_bytes(include_bytes!(
@@ -261,26 +522,7 @@ fn main() {
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => show(app, "connection"),
                     "settings" => show(app, "settings"),
-                    "diagnostics" => {
-                        show(app, "diagnostics");
-                        let app = app.clone();
-                        tauri::async_runtime::spawn(async move {
-                            let result =
-                                observed_service_request(app.clone(), request(Command::RunDiagnostics))
-                                    .await;
-                            let payload = match result {
-                                Ok(observed) => serde_json::json!({
-                                    "generation": observed.generation,
-                                    "result": {"Ok": observed.response},
-                                }),
-                                Err(error) => serde_json::json!({
-                                    "generation": app.state::<Host>().requests.generation.load(Ordering::SeqCst),
-                                    "result": {"Err": error},
-                                }),
-                            };
-                            let _ = app.emit("diagnostic-result", payload);
-                        });
-                    }
+                    "diagnostics" => show(app, "diagnostics"),
                     "restore" => {
                         let app = app.clone();
                         tauri::async_runtime::spawn(async move {
@@ -298,8 +540,12 @@ fn main() {
                                     }),
                                 )
                                 .await;
+                                *app.state::<Host>().tray_result.lock().unwrap() =
+                                    Some(result.clone());
                                 let _ = app.emit("tray-result", result);
                             } else {
+                                *app.state::<Host>().tray_result.lock().unwrap() =
+                                    Some(status.clone());
                                 let _ = app.emit("tray-result", status);
                             }
                             let _ = app.emit("service-changed", ());
@@ -316,12 +562,25 @@ fn main() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                let _ = window.hide();
+                // Keep uncertain mutation receipts and in-flight UI actions alive.
+                // An idle window is rebuilt from embedded assets on the next open.
+                hide_interface(window.clone());
             }
         })
         .build(tauri::generate_context!())
         .expect("Could not start Quad9 Connect")
         .run(|app, event| {
+            if matches!(&event, tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::Destroyed, .. } if label == "main") {
+                let host = app.state::<Host>();
+                let (generation, changed) = &*host.destroyed;
+                if let Ok(mut value) = generation.lock() { *value += 1; changed.notify_all(); };
+            }
+            if let tauri::RunEvent::ExitRequested {
+                api, code: None, ..
+            } = &event
+            {
+                api.prevent_exit();
+            }
             if matches!(event, tauri::RunEvent::Exit) {
                 app.state::<Host>().stop.store(true, Ordering::Release);
             }

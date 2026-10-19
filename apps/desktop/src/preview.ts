@@ -3,21 +3,25 @@ const id = "a956d6e1-8910-4d20-9a67-5e34915c2a10";
 export function previewTransport(): Transport {
   const receipts = new Map<string, Response>();
   let loseResponse = true;
+  let diagnosticCount = 0;
   const mode = new URLSearchParams(location.search).get("preview");
   let status: Status = {
     type: "status",
     revision: 0,
     recovery_blocked: mode === "recovery",
-    observed_matches: mode === "configured" || mode === "slow-probe",
-    journal:
-      mode === "configured" || mode === "recovery" || mode === "slow-probe"
-        ? {
-            phase: mode === "recovery" ? "recovery_required" : "committed",
-            targets: [
-              { target: { adapter_id: id, family: "ipv4" }, phase: "applied" },
-            ],
-          }
-        : null,
+    observed_matches: ["configured", "slow-probe", "failed-probe"].includes(
+      mode ?? "",
+    ),
+    journal: ["configured", "recovery", "slow-probe", "failed-probe"].includes(
+      mode ?? "",
+    )
+      ? {
+          phase: mode === "recovery" ? "recovery_required" : "committed",
+          targets: [
+            { target: { adapter_id: id, family: "ipv4" }, phase: "applied" },
+          ],
+        }
+      : null,
   };
   const adapters: Adapter[] = [
     {
@@ -82,6 +86,14 @@ export function previewTransport(): Transport {
         result = { type: "adapters", adapters };
         break;
       case "run_diagnostics":
+        if (mode === "failed-probe" && ++diagnosticCount > 1) {
+          result = {
+            type: "error",
+            code: "diagnostics_failed",
+            message: "The resolver check timed out.",
+          };
+          break;
+        }
         result = {
           type: "diagnostics",
           report: {

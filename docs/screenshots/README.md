@@ -1,27 +1,35 @@
 # Desktop UI screenshots
 
-The first capture shows the actual packaged Tauri app using real Rust IPC on Windows 11 Pro, build 10.0.26300. The remaining captures show the running React interface in a local Edge browser at 480 logical pixels wide. Playwright captures settled states after the corresponding interaction. Browser previews use sample adapter/service data, display a visible preview label, and do not change DNS. The production Tauri app uses the real service; browser preview fixtures cannot activate in a production build.
+Native captures show the packaged Tauri app with embedded assets and real Rust IPC on Windows 11 Pro, build 10.0.26300. Browser captures show labeled sample states in Edge at 480 logical pixels wide. Playwright captures settled states after the corresponding interaction. Browser preview fixtures cannot activate in a production build.
 
-## Native Windows client, service absent
+## Native release client, service absent
 
-The service is deliberately absent on this host. The client displays its actual unavailable state, prevents Enable, and offers reconnect. This checks native startup and IPC without installing the privileged service or changing host DNS.
+These release-build captures use a fresh application profile and the standard-user token after the temporary service test completed and cleaned up. The client displays its real unavailable-service state. The application changes its own theme. Build hashes, display scaling, test scope, and cleanup results are recorded in the [Windows 11 validation record](../validation/windows11-26300-performance-accessibility.json).
+
+![Native connection screen in the light theme](native-connection-light.png)
+
+![Native connection screen in the dark theme](native-connection-dark.png)
+
+## Earlier native smoke capture
+
+This earlier native smoke capture used an absent service. The client displays its actual unavailable state, prevents Enable, and offers reconnect.
 
 ![Actual Tauri client with unavailable service](native-service-unavailable.png)
 
-## Connection, light theme
+## Browser fixture, connection in the light theme
 
 ![Connection screen in light theme](connection-light.png)
 
-## Configured, dark theme
+## Browser fixture, configured in the dark theme
 
 ![Matching Quad9 configuration in dark theme](configured-dark.png)
 
-## Settings, dark theme
+## Browser fixture, settings in the dark theme
 
 ![Explicit adapter selection and themes](settings-dark.png)
 
-## Diagnostics, dark theme
+## Browser fixture, diagnostics in the dark theme
 
 ![One system-resolver diagnostic result](diagnostics-dark.png)
 
-To regenerate browser captures, run `npm run build` and `npm run test:e2e` in `apps/desktop`. For the native capture, run `node scripts/native-smoke.mjs <path-to-built-executable>` there on Windows with the service absent. Generated output stays under the ignored `output/playwright/` directory. The four browser captures and one native capture are deliberately tracked for PR review.
+To regenerate browser captures, run `npm run build` and `npm run test:e2e` in `apps/desktop`. Run `node scripts/native-validation.mjs <release-desktop.exe> 20 <output-directory>` unelevated for the native captures. Add `--require-service` only when the service is installed, the current token is authorized, and DNS management is off. `native-smoke.mjs` generates the earlier unavailable-service capture when the service is absent. Generated profiles and raw validation output stay under ignored directories. Only selected screenshots and sanitized validation records are tracked.

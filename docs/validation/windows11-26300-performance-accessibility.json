@@ -1,0 +1,209 @@
+{
+  "schema": 1,
+  "date": "2026-10-19",
+  "pull_request": "https://github.com/M0inUddin/quad9-connect-windows/pull/11",
+  "functional_validation_passed": true,
+  "supported_release_qualified": false,
+  "build": {
+    "tested_runtime_source_commit": "2959b87e386ec60b92433b11210b53c63d63f238",
+    "ci_checkout_commit": "ae63e8c3050a52a5c453276ecc0a882730bab587",
+    "installer_workflow_run": 39260456324,
+    "target": "x86_64-pc-windows-msvc",
+    "configuration": "release",
+    "signed": false,
+    "desktop_sha256": "5d5933cb24965c9ad8e353de27b989e68f5e9eaa65782505104bd3cdc002c6bb",
+    "service_sha256": "ee93c4626ca6932736b24a99d805ab5ed0c9eb32196a0b0ccc06860b4c091dfb",
+    "installer_sha256": "41484b3bb05609a805a8c459aa3ee68d5785b935413364a38e3291a185bc0337",
+    "original_artifact_source_dirty": true,
+    "source_note": "The CI checkout tree matches the tested source commit. Tauri normalized tauri-build = \"2\" to the equivalent { version = \"2\", features = [] } declaration before packaging. That sole tracked mutation was reproduced locally and its canonical form was committed in c222860. The original artifact dirty flag is retained here.",
+    "subsequent_clean_ci_build": {
+      "pull_request_head": "c222860e686c51ce608915221cf9b44368d0f7b8",
+      "ci_checkout_commit": "f8350367aff5cdd594d39bee48c7a41f536ee635",
+      "workflow_run": 39267803917,
+      "source_dirty": false,
+      "installer_sha256": "8adfe3c11d3001edb2b6c19dc91004a0acde03531c4d81ccbbe19501501a85cd",
+      "physical_measurement_repeated_for_this_binary": false,
+      "runtime_and_service_source_files_unchanged": true
+    }
+  },
+  "host": {
+    "operating_system": "Windows 11 Pro",
+    "version": "10.0.26300",
+    "cpu": "13th Gen Intel(R) Core(TM) i7-1370P",
+    "logical_processors": 20,
+    "installed_memory_gib": 32,
+    "node_visible_memory_gib": 31.602447509765625,
+    "storage_bus": "NVMe",
+    "storage_capacity_bytes": 512110190592,
+    "webview_version": "155.0.4283.62",
+    "device_pixel_ratio": 2,
+    "specification_reference_machine": false
+  },
+  "scope": {
+    "desktop_token": "Existing standard-user token",
+    "desktop_connection_state": "Service unavailable",
+    "service_during_desktop_tests": "Absent after the independently measured service was safely uninstalled",
+    "service_measurement_state": "Installed LocalSystem service; administrator status check confirmed DNS management off, no journal, and no recovery block",
+    "simultaneous_service_and_desktop_measurement": false,
+    "dns_mutations_sent_by_desktop_tests": false,
+    "windows_accessibility_settings_changed": false
+  },
+  "startup": {
+    "runs": 20,
+    "milliseconds": [
+      3217.6009,
+      2687.1944999999996,
+      2937.2538000000004,
+      2337.563399999999,
+      1752.1890000000003,
+      1529.5538000000015,
+      1783.119499999997,
+      3676.662500000002,
+      2105.077400000002,
+      1763.196799999998,
+      2019.0933000000005,
+      2430.6663000000044,
+      2155.7566000000006,
+      1801.5931999999957,
+      1597.6667000000016,
+      3238.663099999998,
+      1863.7422000000006,
+      1567.6477999999988,
+      2738.903099999996,
+      3243.4853000000003
+    ],
+    "p95_ms": 3243.4853000000003,
+    "target_ms": 3000,
+    "target_pass": false,
+    "method": "Process-cold starts with a new WebView profile each run. OS caches and other running apps are unchanged. CDP readiness observation adds overhead. Resource measurements run separately without CDP or accessibility instrumentation."
+  },
+  "resources": {
+    "method": "Read-only CIM process counters. Thirty seconds of settling, followed by at least five minutes per mode. CPU is percent of one logical CPU. Working sets count shared resident pages separately in each process. Service and desktop intervals are separate, so desktop reports retain null complete-process budget decisions. CDP clients and accessibility scans are disconnected during idle sampling; a loopback debugging listener remains enabled for native close control.",
+    "service": {
+      "mode": "service",
+      "settle_seconds": 30,
+      "measured_seconds": 300.1959098,
+      "sample_count": 108,
+      "complete_process_set": true,
+      "five_minute_interval": true,
+      "cpu_percent_one_logical_core": 0.02602467170590344,
+      "process_exits_observed": false,
+      "average_working_set_mib": 9.516890914351851,
+      "maximum_working_set_mib": 9.65234375,
+      "cpu_target_pass": true,
+      "memory_target_pass": true,
+      "minimum_webview_processes": 0,
+      "maximum_webview_processes": 0
+    },
+    "window_desktop_only": {
+      "mode": "window",
+      "settle_seconds": 30,
+      "measured_seconds": 302.0809748,
+      "sample_count": 112,
+      "complete_process_set": false,
+      "five_minute_interval": true,
+      "cpu_percent_one_logical_core": 1.1741470982567817,
+      "process_exits_observed": false,
+      "average_working_set_mib": 388.99979073660717,
+      "maximum_working_set_mib": 394,
+      "cpu_target_pass": null,
+      "memory_target_pass": null,
+      "minimum_webview_processes": 6,
+      "maximum_webview_processes": 6
+    },
+    "tray_desktop_only": {
+      "mode": "tray",
+      "settle_seconds": 30,
+      "measured_seconds": 300.8573062,
+      "sample_count": 113,
+      "complete_process_set": false,
+      "five_minute_interval": true,
+      "cpu_percent_one_logical_core": 0.015580475871454839,
+      "process_exits_observed": false,
+      "average_working_set_mib": 27.203470685840706,
+      "maximum_working_set_mib": 27.2421875,
+      "cpu_target_pass": null,
+      "memory_target_pass": null,
+      "minimum_webview_processes": 0,
+      "maximum_webview_processes": 0
+    }
+  },
+  "accessibility": {
+    "native_axe_scans": [
+      {
+        "theme": "Light",
+        "view": "Connection",
+        "violations": 0
+      },
+      {
+        "theme": "Light",
+        "view": "Diagnostics",
+        "violations": 0
+      },
+      {
+        "theme": "Light",
+        "view": "Settings",
+        "violations": 0
+      },
+      {
+        "theme": "Dark",
+        "view": "Connection",
+        "violations": 0
+      },
+      {
+        "theme": "Dark",
+        "view": "Diagnostics",
+        "violations": 0
+      },
+      {
+        "theme": "Dark",
+        "view": "Settings",
+        "violations": 0
+      }
+    ],
+    "native_keyboard_navigation_passed": true,
+    "webview_forced_colors_and_reduced_motion_emulation_passed": true,
+    "content_zoom_200_percent_reflow_passed": true,
+    "browser_fixture_axe_states": [
+      "off",
+      "configured",
+      "recovery",
+      "unavailable"
+    ],
+    "browser_fixture_themes": [
+      "Light",
+      "Dark"
+    ],
+    "browser_fixture_screen_scans": 24,
+    "manual_narrator_validation": "Not performed",
+    "operating_system_contrast_themes": "Not performed; WebView media emulation is separate",
+    "per_monitor_dpi_transitions": "Not performed"
+  },
+  "lifecycle": {
+    "retained_window_survived_close": true,
+    "stale_retention_release_ignored": true,
+    "idle_window_destroyed": true,
+    "single_instance_reopen": true,
+    "preferences_preserved": true,
+    "retention_recorded_before_close": true,
+    "immediate_close_reopen_cycles": 6,
+    "concurrent_release_reopen_cycles": 6,
+    "reload_discards_old_retention": true,
+    "document_reload_retention": true
+  },
+  "cleanup": {
+    "passed": true,
+    "dns_unchanged": true,
+    "service_removed": true,
+    "operator_group_removed": true
+  },
+  "remaining_release_gates": [
+    "Startup p95 exceeds the three-second target in this observed unavailable-service run.",
+    "Main-window memory must meet the 250 MiB target across the complete service and desktop process set.",
+    "Open-window idle CPU exceeds 0.5% of one logical CPU even before including the service.",
+    "Simultaneous service, window, and tray resource measurements with a fresh authorized standard-user token.",
+    "Reference machine measurements with four logical CPUs, 8 GiB RAM, and SSD storage.",
+    "Manual Narrator, operating-system contrast themes, per-monitor DPI, and native tray-menu checks.",
+    "The remaining Windows 11 support, sleep/resume, VPN interference, installer, and recovery matrix."
+  ]
+}
