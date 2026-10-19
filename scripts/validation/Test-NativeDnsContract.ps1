@@ -15,9 +15,13 @@ if ($RestoreOnly) {
     return
 }
 
-$adapter = Get-NetIPConfiguration | Where-Object { $null -ne $_.IPv4DefaultGateway } | Select-Object -First 1
-if ($null -eq $adapter) { throw 'No validation adapter has an IPv4 default gateway.' }
-$id = [guid]$adapter.NetAdapter.InterfaceGuid
+# Avoid Get-NetIPConfiguration's composite NetAdapter setter, which can fail
+# when a hosted image exposes duplicate CIM adapter descriptions.
+$route = Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' | Sort-Object RouteMetric, ifIndex | Select-Object -First 1
+if ($null -eq $route) { throw 'No validation adapter has an IPv4 default gateway.' }
+$adapters = @(Get-NetAdapter -IncludeHidden | Where-Object { $_.ifIndex -eq $route.ifIndex })
+if ($adapters.Count -ne 1) { throw 'The validation default route must identify exactly one adapter.' }
+$id = [guid]$adapters[0].InterfaceGuid
 $families = @()
 foreach ($ipv6 in @($false, $true)) {
     $snapshot = [Quad9Validation.DnsApi]::Read($id, $ipv6)
