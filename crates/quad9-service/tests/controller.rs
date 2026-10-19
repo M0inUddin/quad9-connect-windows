@@ -351,13 +351,18 @@ fn explicit_restore_can_retry_a_temporarily_absent_adapter() {
     let mut controller = Controller::start(backend.clone(), state).unwrap();
     controller.dispatch(ACTOR, enable("one", 0));
     backend.0.borrow_mut().missing = true;
-    assert!(matches!(
-        controller.dispatch(ACTOR, restore("two", 1)).result,
+    match controller.dispatch(ACTOR, restore("two", 1)).result {
         ResultBody::Restored {
-            complete: false,
-            ..
+            complete, issues, ..
+        } => {
+            assert!(!complete);
+            assert_eq!(issues.len(), 1);
+            assert!(issues[0].contains(target().adapter_id.as_str()));
+            assert!(issues[0].contains("IPv4"));
+            assert!(issues[0].contains("adapter absent"));
         }
-    ));
+        other => panic!("Expected incomplete restoration, got {other:?}"),
+    }
     backend.0.borrow_mut().missing = false;
     assert!(matches!(
         controller.dispatch(ACTOR, restore("three", 2)).result,

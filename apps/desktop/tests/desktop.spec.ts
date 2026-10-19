@@ -81,6 +81,60 @@ test("an uncertain Enable retries its original identity and payload", async ({
   expect(mutations[0]).toEqual(mutations[1]);
 });
 
+test("diagnostics cannot replay or consume an uncertain DNS mutation", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const calls: unknown[] = [];
+    Object.assign(window, { previewCalls: calls });
+    window.addEventListener("quad9-preview-request", (event) =>
+      calls.push((event as CustomEvent).detail),
+    );
+  });
+  await page.goto("/?preview=lost-response");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("checkbox", { name: "IPv4", exact: true }).check();
+  await page.getByRole("button", { name: "Connection", exact: true }).click();
+  await page.getByRole("button", { name: "Enable Quad9", exact: true }).click();
+  await expect(
+    page.getByText("The result is uncertain.", { exact: false }),
+  ).toBeVisible();
+  // Reconnecting learns the current state but cannot settle the original receipt.
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(
+    page.getByRole("heading", { name: "Quad9 configured" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Run diagnostics", exact: true })
+    .click();
+  await expect(
+    page.getByText("DNS over HTTPS observed", { exact: true }),
+  ).toBeVisible();
+  const calls: Request[] = await page.evaluate(
+    () => (window as unknown as { previewCalls: Request[] }).previewCalls,
+  );
+  expect(calls.filter((c) => c.command.type === "enable_quad9")).toHaveLength(
+    1,
+  );
+  expect(
+    calls.filter((c) => c.command.type === "run_diagnostics"),
+  ).toHaveLength(1);
+  await page.getByRole("button", { name: "Connection", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Retry last request", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Turn off and restore DNS", exact: true }),
+  ).toBeEnabled();
+  const retried: Request[] = await page.evaluate(
+    () => (window as unknown as { previewCalls: Request[] }).previewCalls,
+  );
+  const mutations = retried.filter((c) => c.command.type === "enable_quad9");
+  expect(mutations).toHaveLength(2);
+  expect(mutations[0]).toEqual(mutations[1]);
+});
+
 test("production browser content cannot activate sample service data", async ({
   page,
 }) => {
