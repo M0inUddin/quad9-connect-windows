@@ -93,9 +93,14 @@ fn observe_network(app: tauri::AppHandle) -> std::io::Result<()> {
                 // A burst gets one read after 250 ms quiet, or after two seconds at
                 // most. The wait consumes notifications, never polls adapter state.
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-                while std::time::Instant::now() < deadline
-                    && watcher.wait(std::time::Duration::from_millis(250))
-                {}
+                loop {
+                    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                    if remaining.is_zero()
+                        || !watcher.wait(remaining.min(std::time::Duration::from_millis(250)))
+                    {
+                        break;
+                    }
+                }
                 if host.stop.load(Ordering::Acquire) {
                     break;
                 }
