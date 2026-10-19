@@ -1,4 +1,4 @@
-//! Read-only Windows DNS investigation. No native write API is exposed.
+//! Windows DNS integration and privileged service primitives.
 
 use quad9_core::AdapterId;
 use serde::Serialize;
@@ -8,7 +8,45 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 #[cfg(windows)]
+mod dns_backend;
+#[cfg(windows)]
+pub mod service;
+#[cfg(windows)]
 mod windows;
+#[cfg(windows)]
+pub use dns_backend::WindowsDnsBackend;
+
+#[cfg(windows)]
+pub fn replace_file(
+    source: &std::path::Path,
+    destination: &std::path::Path,
+) -> Result<(), NativeError> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+    let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+    let destination: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    // SAFETY: Both paths are initialized NUL-terminated UTF-16 and remain live.
+    if unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    } == 0
+    {
+        return Err(NativeError::Windows {
+            operation: "MoveFileExW",
+            code: std::io::Error::last_os_error().raw_os_error().unwrap_or(1) as u32,
+        });
+    }
+    Ok(())
+}
 
 pub const PROBE_NAME: &str = "proto.on.quad9.net.";
 pub const PROBE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -21,6 +59,8 @@ pub enum NativeError {
     Windows { operation: &'static str, code: u32 },
     #[error("{0}")]
     InvalidData(String),
+    #[error("System DNS check exceeded its deadline")]
+    Deadline,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -40,6 +80,9 @@ pub struct AdapterInspection {
     pub hardware_interface: Option<bool>,
     pub ipv4_enabled: bool,
     pub ipv6_enabled: bool,
+    pub ipv6_usable: bool,
+    pub has_ipv4_dns: bool,
+    pub has_ipv6_dns: bool,
     pub candidate: bool,
     pub exclusion_reason: Option<String>,
     pub dns_readback: Option<RawDnsReadback>,
@@ -158,9 +201,7 @@ pub fn classify_responses(values: &[String]) -> (ProbeOutcome, Option<ObservedTr
     }
 }
 
-/// One bounded diagnostic invocation for the CLI. The synchronous Windows
-/// query owns all its resources on its worker. On timeout the CLI can exit;
-/// a future long-running service must use cancellable DnsQueryEx instead.
+/// A cancellable system-resolver diagnostic with at most one outstanding query.
 pub fn probe_system_resolver() -> Result<ProbeReport, NativeError> {
     #[cfg(not(windows))]
     {
@@ -168,35 +209,23 @@ pub fn probe_system_resolver() -> Result<ProbeReport, NativeError> {
     }
     #[cfg(windows)]
     {
-        use std::{sync::mpsc, time::Instant};
+        use std::time::Instant;
         let checked_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
         let start = Instant::now();
-        let (send, receive) = mpsc::sync_channel(1);
-        std::thread::Builder::new()
-            .name("quad9-protocol-check".into())
-            .spawn(move || {
-                let _ = send.send(windows::query_protocol());
-            })
-            .map_err(|e| NativeError::InvalidData(format!("Cannot start diagnostic: {e}")))?;
-        let (outcome, transport, error) = match receive.recv_timeout(PROBE_TIMEOUT) {
-            Ok(Ok(values)) => {
+        let (outcome, transport, error) = match windows::query_protocol(PROBE_TIMEOUT) {
+            Ok(values) => {
                 let (outcome, transport) = classify_responses(&values);
                 (outcome, transport, None)
             }
-            Ok(Err(error)) => (ProbeOutcome::Failed, None, Some(error.to_string())),
-            Err(mpsc::RecvTimeoutError::Timeout) => (
+            Err(NativeError::Deadline) => (
                 ProbeOutcome::TimedOut,
                 None,
                 Some("System DNS check exceeded 15 seconds".into()),
             ),
-            Err(mpsc::RecvTimeoutError::Disconnected) => (
-                ProbeOutcome::Failed,
-                None,
-                Some("System DNS check ended unexpectedly".into()),
-            ),
+            Err(error) => (ProbeOutcome::Failed, None, Some(error.to_string())),
         };
         Ok(ProbeReport {
             query: PROBE_NAME,

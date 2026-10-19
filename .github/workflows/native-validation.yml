@@ -1,0 +1,36 @@
+name: Native DNS contract in disposable VMs
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Write and restore native settings in this disposable VM
+        shell: pwsh
+        run: ./scripts/validation/Test-NativeDnsContract.ps1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable action
+        with:
+          toolchain: 1.99.1
+      - run: cargo build --locked -p quad9-service --features vm-validation
+      - name: Validate the LocalSystem service and standard-user authorization
+        shell: pwsh
+        run: ./scripts/validation/Test-PrivilegedService.ps1 -BinaryPath ./target/debug/quad9-service.exe
+      - name: Restore saved baseline even when validation fails
+        if: always()
+        shell: pwsh
+        run: |
+          $service = Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue
+          if ($service -and $service.Status -ne 'Stopped') { Stop-Service -Name Quad9Connect -ErrorAction Continue }
+          ./scripts/validation/Test-NativeDnsContract.ps1 -RestoreOnly

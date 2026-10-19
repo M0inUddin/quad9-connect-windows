@@ -27,7 +27,7 @@ jobs:
           toolchain: 1.99.1
           components: clippy, rustfmt
       - run: cargo fmt --all -- --check
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --locked
       - run: cargo run --locked -p quad9-cli -- --help
       - name: Inspect Windows adapters without changing DNS
