@@ -10,8 +10,8 @@ if ($Mode -eq 'deny-storage') {
     catch [UnauthorizedAccessException] { Write-Output 'storage-denied'; exit 0 }
 }
 if ($Mode -in @('oversized', 'malformed')) {
-    $pipe = [IO.Pipes.NamedPipeClientStream]::new('.', 'Quad9Connect.v1', [IO.Pipes.PipeDirection]::InOut,
-        [IO.Pipes.PipeOptions]::None, [Security.Principal.TokenImpersonationLevel]::Identification)
+    $pipe = [IO.Pipes.NamedPipeClientStream]::new('.', 'Quad9Connect.v1', [IO.Pipes.PipeAccessRights]0x00120083,
+        [IO.Pipes.PipeOptions]::None, [Security.Principal.TokenImpersonationLevel]::Identification, [IO.HandleInheritability]::None)
     try {
         $pipe.Connect(2000)
         if ($Mode -eq 'oversized') {

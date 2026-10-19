@@ -1,7 +1,4 @@
-use super::{
-    security::{token_sid, PipeSecurity},
-    *,
-};
+use super::{security::PipeSecurity, *};
 use std::{
     mem,
     sync::atomic::Ordering,
@@ -9,7 +6,6 @@ use std::{
 };
 use windows_sys::Win32::{
     Foundation::*,
-    Security::TOKEN_QUERY,
     Storage::FileSystem::*,
     System::{Pipes::*, Services::*, Threading::*, IO::*},
 };
@@ -237,20 +233,6 @@ fn verify_server(pipe: HANDLE) -> Result<(), NativeError> {
     if unsafe { GetNamedPipeServerProcessId(pipe, &mut pid) } == 0 {
         return Err(last_error("GetNamedPipeServerProcessId"));
     }
-    // SAFETY: Open only a query handle to the process identified by the pipe.
-    let process = Handle::checked(
-        unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) },
-        "OpenProcess",
-    )?;
-    let mut token = null_handle();
-    // SAFETY: process is live and token is a writable handle output.
-    if unsafe { OpenProcessToken(process.0, TOKEN_QUERY, &mut token) } == 0 {
-        return Err(last_error("OpenProcessToken"));
-    }
-    let token = Handle::checked(token, "OpenProcessToken")?;
-    if token_sid(token.0)? != "S-1-5-18" {
-        return Err(invalid("The pipe server is not LocalSystem"));
-    }
     // SAFETY: Request only connection/query rights against the local SCM.
     let manager = unsafe { OpenSCManagerW(ptr::null(), ptr::null(), SC_MANAGER_CONNECT) };
     if manager.is_null() {
@@ -258,8 +240,13 @@ fn verify_server(pipe: HANDLE) -> Result<(), NativeError> {
     }
     let manager = ScHandle(manager);
     // SAFETY: The fixed service name is terminated and manager is live.
-    let service =
-        unsafe { OpenServiceW(manager.0, wide(SERVICE_NAME).as_ptr(), SERVICE_QUERY_STATUS) };
+    let service = unsafe {
+        OpenServiceW(
+            manager.0,
+            wide(SERVICE_NAME).as_ptr(),
+            SERVICE_QUERY_STATUS | SERVICE_QUERY_CONFIG,
+        )
+    };
     if service.is_null() {
         return Err(last_error("OpenServiceW"));
     }
@@ -284,6 +271,43 @@ fn verify_server(pipe: HANDLE) -> Result<(), NativeError> {
             "The pipe server does not match the installed Quad9 service",
         ));
     }
+    // SCM configuration is queryable by ordinary operators, unlike a SYSTEM
+    // process token. Require a dedicated LocalSystem process and its exact PID.
+    // SAFETY: The first call requests the required output size only.
+    unsafe {
+        QueryServiceConfigW(service.0, ptr::null_mut(), 0, &mut bytes);
+    }
+    if bytes == 0 || bytes > 65_536 {
+        return Err(invalid("Invalid service configuration size"));
+    }
+    let mut buffer = vec![0u128; (bytes as usize).div_ceil(16)];
+    let config = buffer.as_mut_ptr().cast::<QUERY_SERVICE_CONFIGW>();
+    // SAFETY: The aligned buffer has at least the requested bytes.
+    if unsafe { QueryServiceConfigW(service.0, config, bytes, &mut bytes) } == 0 {
+        return Err(last_error("QueryServiceConfigW"));
+    }
+    // SAFETY: The complete configuration and its strings remain in buffer.
+    let config = unsafe { &*config };
+    if config.dwServiceType != SERVICE_WIN32_OWN_PROCESS || config.lpServiceStartName.is_null() {
+        return Err(invalid("Unexpected service identity"));
+    }
+    let mut len = 0;
+    // SAFETY: SCM returns a terminated account string within its output buffer.
+    while len < 256 && unsafe { *config.lpServiceStartName.add(len) } != 0 {
+        len += 1;
+    }
+    if len == 256 {
+        return Err(invalid("Overlong service identity"));
+    }
+    // SAFETY: The preceding scan bounded this initialized string.
+    let account =
+        String::from_utf16(unsafe { std::slice::from_raw_parts(config.lpServiceStartName, len) })
+            .map_err(|_| invalid("Invalid service identity"))?;
+    if !account.eq_ignore_ascii_case("LocalSystem")
+        && !account.eq_ignore_ascii_case(r"NT AUTHORITY\SYSTEM")
+    {
+        return Err(invalid("The installed service is not LocalSystem"));
+    }
     Ok(())
 }
 
@@ -303,7 +327,7 @@ pub fn transact(request: &[u8]) -> Result<Vec<u8>, NativeError> {
         unsafe {
             CreateFileW(
                 name.as_ptr(),
-                0x0012_0003,
+                0x0012_0083,
                 0,
                 ptr::null(),
                 OPEN_EXISTING,

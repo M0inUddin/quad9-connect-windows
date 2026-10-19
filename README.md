@@ -2,7 +2,7 @@
 
 An independent community Windows client for Quad9 DNS, inspired by Quad9 Connect for Android. This project is not affiliated with or endorsed by Quad9.
 
-Version 0.1 is in development. The first increment provides a Rust transaction and recovery core plus a read-only Windows diagnostics tool. The desktop interface, privileged service, native writes, and installer are still pending. See the [implementation status](docs/implementation-status.md).
+Version 0.1 is in development. The Rust workspace includes the transaction core, native DNS backend, protected recovery storage, a privileged Windows service, and read-only inspection commands. Service installation is currently a development workflow for disposable VMs. Windows 11 validation, the desktop interface, and distribution installer remain release gates. See the [implementation status](docs/implementation-status.md) and [service development guide](docs/service-development.md).
 
 The [final project specification](docs/project-specification.md) defines the stack, release scope, architecture, interface behavior, recovery rules, privacy requirements, and acceptance criteria.
 

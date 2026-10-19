@@ -298,9 +298,10 @@ impl PipeSecurity {
         };
         let mut sddl = "D:P(A;;GA;;;SY)(A;;GA;;;BA)".to_owned();
         if let Some(group) = &operators {
-            // Data read/write, read-control, synchronize. Exclude CREATE_PIPE_INSTANCE.
+            // Data read/write, read attributes, read-control, synchronize.
+            // CreateFile implicitly requires read attributes. Exclude CREATE_PIPE_INSTANCE.
             sddl.push_str(&format!(
-                "(A;;0x00120003;;;{})",
+                "(A;;0x00120083;;;{})",
                 sid_text(group.as_ptr().cast_mut().cast())?
             ));
         }
