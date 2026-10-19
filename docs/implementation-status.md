@@ -15,6 +15,7 @@ Version 0.1 is under development. It is not a supported public release.
 - An unsigned NSIS development installer with explicit local-user enrollment, protected versioned payloads, active-state upgrades, failed replacement rollback, interrupted-setup reconciliation, and offline administrator recovery. Uninstall restores under the exclusive store lock before deleting the service and retains recovery records. See [installer behavior and validation](windows-installer.md).
 - A first Tauri 2/React desktop client with explicit adapter and family selection, enable/restore controls, scoped diagnostic results, and per-user light/dark/system themes. The native host uses typed authenticated IPC, a single app instance, close-to-tray behavior, and a tray menu with restore and quit controls.
 - Native IP interface, address, route, DNS configuration, and policy notifications with coalesced status reads and diagnostic invalidation. Missing or replaced policy keys remain observed. Reads that span a change cannot republish stale observations, and monitoring failures remain visible. See [network observation](network-observation.md) for coverage and limits.
+- Bounded, protected service startup events with fixed codes, seven-day retention while running, and cleanup during safe uninstall. Logging failures preserve the controller's existing recovery decision. See [operational logging](operational-logging.md).
 
 The service rejects managed DNS policies, profile-specific settings, unknown encryption properties, unsupported adapters, uncovered active resolver scopes, and IPv6 without a preferred global address and gateway. These conservative checks require compatibility testing before broader support.
 
@@ -43,6 +44,6 @@ The native UI and desktop resource tests ran unelevated after service cleanup an
 1. Run the complete write, restore, service, authorization, and recovery matrix on disposable Windows 11 x64 builds and physical adapters.
 2. Validate IP and DNS notifications during physical handoffs, policy deployment, and sleep/resume. Reconcile external changes without rewriting them.
 3. Complete native tray-menu and manual assistive-technology validation on Windows 11, then add application startup preferences and connection notifications.
-4. Add direct upstream diagnostics and bounded operational logging for startup failures.
+4. Add direct upstream diagnostics and complete physical validation of service startup events.
 5. Complete signed distribution and the remaining physical Windows 11 installer, upgrade, and recovery support matrix.
 6. Meet the startup, main-window memory, and open-window idle CPU targets and complete reference-machine, accessibility, sleep/wake, VPN interference, and specification acceptance measurements. See [performance and accessibility validation](performance-accessibility.md) for measured scope and outstanding gates.

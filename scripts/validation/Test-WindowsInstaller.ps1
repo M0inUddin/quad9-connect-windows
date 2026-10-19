@@ -217,6 +217,9 @@ try {
     Assert-Baseline
     if ((Get-Service Quad9Connect -ErrorAction SilentlyContinue) -or (State).installed -or (Get-LocalGroup Quad9ConnectOperators -ErrorAction SilentlyContinue)) { throw 'Safe uninstall left installed resources or operator enrollment.' }
     if (-not (Test-Path -LiteralPath (Join-Path $data 'dns.journal.json'))) { throw 'Uninstall discarded the audit and recovery journal.' }
+    foreach ($name in @('startup-events.v1.json', 'startup-events.v1.json.tmp', 'startup-events.v1.lock')) {
+        if (Test-Path -LiteralPath (Join-Path $data $name)) { throw 'Safe uninstall retained an operational log file.' }
+    }
     if (-not (Test-Path -LiteralPath (Join-Path $obsoleteDirectory 'quad9-service.exe'))) { throw 'Uninstall deleted a changed obsolete file.' }
     $operatorsIni = Join-Path $output 'operators-after-removal.ini'
     & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $repo 'installer\windows\List-Operators.ps1') -OutputPath $operatorsIni

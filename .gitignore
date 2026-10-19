@@ -48,6 +48,9 @@ next-env.d.ts
 *.journal.json.tmp
 *.journal.tmp
 *.journal.lock
+startup-events.v1.json
+startup-events.v1.json.tmp
+startup-events.v1.lock
 *.etl
 *.dmp
 *.msi

@@ -252,14 +252,24 @@ function Publish-Installation([object] $State) {
     $shortcut.Save()
 }
 
-function Remove-ServiceRegistration {
-    & "$env:SystemRoot\System32\sc.exe" delete Quad9Connect | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Cannot remove the stopped service. Recovery binaries have been retained.' }
-    $deadline = [DateTime]::UtcNow.AddSeconds(30)
-    while (Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue) {
-        if ([DateTime]::UtcNow -gt $deadline) { throw 'Service removal is pending. Close service management tools and run uninstall again.' }
+function Wait-Quad9ServiceRemoval([ValidateRange(0, 300)][int] $TimeoutSeconds = 30) {
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ($true) {
+        $remaining = Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue
+        $present = $null -ne $remaining
+        if ($remaining) { $remaining.Dispose() }
+        # OpenService can reject a marked entry before its registry key disappears.
+        $registered = Test-Path -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\Quad9Connect'
+        if (-not $present -and -not $registered) { return }
+        if ([DateTime]::UtcNow -ge $deadline) { throw 'Service deletion is pending. Close service management tools; cleanup has been deferred.' }
         Start-Sleep -Milliseconds 100
     }
+}
+
+function Remove-ServiceRegistration([ValidateRange(0, 300)][int] $TimeoutSeconds = 30) {
+    & "$env:SystemRoot\System32\sc.exe" delete Quad9Connect | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot remove the stopped service. Recovery binaries have been retained.' }
+    Wait-Quad9ServiceRemoval $TimeoutSeconds
 }
 
 function Restore-PendingInstallation([object] $Pending) {
@@ -440,9 +450,24 @@ function Uninstall-Quad9Payload([object] $State) {
     Complete-Quad9Removal $State
 }
 
+function Remove-Quad9OperationalLog {
+    Wait-Quad9ServiceRemoval 0
+    if (-not (Test-Path -LiteralPath $script:Data)) { return }
+    Assert-ProtectedDirectory $script:Data $false
+    foreach ($name in @('startup-events.v1.json', 'startup-events.v1.json.tmp', 'startup-events.v1.lock')) {
+        $path = Join-Path $script:Data $name
+        if (Test-Path -LiteralPath $path) {
+            Assert-RegularPath $path
+            Assert-TrustedAcl $path
+            Remove-Item -LiteralPath $path
+        }
+    }
+}
+
 function Complete-Quad9Removal([object] $State) {
     if (Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue) { throw 'A service still exists. Refusing file removal.' }
     if (Test-Path -LiteralPath $script:Data) { Assert-ProtectedDirectory $script:Data $false; Clear-MaintenanceGate }
+    Remove-Quad9OperationalLog
     Undo-Enrollment $State.enrollment
     # Once reversed, later cleanup retries must not remove new administrator
     # membership changes made after the successful removal.

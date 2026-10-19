@@ -16,6 +16,11 @@ if ($Mode -eq 'deny-storage') {
     try { [IO.File]::WriteAllText($path, 'denied'); throw 'Operator unexpectedly wrote protected recovery data.' }
     catch [UnauthorizedAccessException] { Write-Output 'storage-denied'; exit 0 }
 }
+if ($Mode -eq 'deny-log-read') {
+    $path = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'Quad9Connect\startup-events.v1.json'
+    try { [IO.File]::ReadAllBytes($path) | Out-Null; throw 'Operator unexpectedly read protected operational logs.' }
+    catch [UnauthorizedAccessException] { Write-Output 'log-read-denied'; exit 0 }
+}
 if ($Mode -in @('oversized', 'malformed')) {
     $pipe = [IO.Pipes.NamedPipeClientStream]::new('.', 'Quad9Connect.v1', [IO.Pipes.PipeAccessRights]0x00120083,
         [IO.Pipes.PipeOptions]::None, [Security.Principal.TokenImpersonationLevel]::Identification, [IO.HandleInheritability]::None)

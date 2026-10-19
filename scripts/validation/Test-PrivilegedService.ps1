@@ -68,6 +68,7 @@ $operatorStatus = Invoke-UserClient -User $operator -Request $read
 if ($operatorStatus.result.type -ne 'status') { throw 'Authorized standard user could not inspect service state.' }
 Invoke-UserClient -User $outsider -Request $read -ExpectedExit 1 | Out-Null
 Invoke-UserClient -User $operator -Request $read -Mode deny-storage | Out-Null
+Invoke-UserClient -User $operator -Request $read -Mode deny-log-read | Out-Null
 Invoke-UserClient -User $operator -Request $read -Mode malformed | Out-Null
 Invoke-UserClient -User $operator -Request $read -Mode oversized | Out-Null
 $status = Invoke-AdminRequest @{ type = 'get_status' }
@@ -87,10 +88,67 @@ Restart-Service -Name Quad9Connect
 $retry = Invoke-UserClient -User $operator -Request $enableRequest
 $status = Invoke-AdminRequest @{ type = 'get_status' }
 if ($retry.result.type -ne 'enabled' -or $status.result.revision -ne 2 -or $status.result.journal.phase -ne 'restored') { throw 'Retry after restart changed the restored state.' }
+$data = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'Quad9Connect'
+$logPath = Join-Path $data 'startup-events.v1.json'
+$log = Get-Content -LiteralPath $logPath -Raw | ConvertFrom-Json
+if ($log.version -ne 1 -or 'controller_started' -notin $log.records.event -or 'service_stopped' -notin $log.records.event) { throw 'Real service startup and stop events were not recorded.' }
+if ((Get-Item -LiteralPath $logPath).Length -gt 512KB) { throw 'Operational log exceeded its byte limit.' }
+foreach ($record in $log.records) {
+    if (@($record.PSObject.Properties.Name | Where-Object { $_ -notin @('unix_seconds', 'event', 'windows_error') }).Count) { throw 'Operational logs contain unexpected fields.' }
+}
+# Log corruption cannot make a previously restored controller unavailable.
+Stop-Service Quad9Connect
+$savedLog = [IO.File]::ReadAllBytes($logPath)
+[IO.File]::WriteAllText($logPath, 'invalid operational log fixture')
+try {
+    Start-Service Quad9Connect
+    $status = Invoke-AdminRequest @{ type = 'get_status' }
+    if ($status.result.revision -ne 2 -or $status.result.journal.phase -ne 'restored') { throw 'An unusable operational log changed the controller state.' }
+    if ([IO.File]::ReadAllText($logPath) -ne 'invalid operational log fixture') { throw 'Unknown operational log data was overwritten.' }
+} finally {
+    Stop-Service Quad9Connect -ErrorAction SilentlyContinue
+    [IO.File]::WriteAllBytes($logPath, $savedLog)
+}
+# A controller-start failure must remain identifiable without recording its data.
+$requestPath = Join-Path $data 'requests.journal.json'
+$savedRequests = [IO.File]::ReadAllBytes($requestPath)
+[IO.File]::WriteAllText($requestPath, 'invalid request-state fixture')
+try {
+    $refused = $false
+    try { Start-Service Quad9Connect -ErrorAction Stop } catch { $refused = $true }
+    if (-not $refused) { throw 'Invalid request state unexpectedly started the service.' }
+    (Get-Service Quad9Connect).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+    $log = Get-Content -LiteralPath $logPath -Raw | ConvertFrom-Json
+    if ('controller_start_failed' -notin $log.records.event) { throw 'Controller startup failure was not recorded.' }
+} finally {
+    if ((Get-Service Quad9Connect).Status -ne 'Stopped') {
+        Stop-Service Quad9Connect
+        (Get-Service Quad9Connect).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+    }
+    [IO.File]::WriteAllBytes($requestPath, $savedRequests)
+}
+Start-Service Quad9Connect
 foreach ($family in $baseline.families) {
     $actual = [Quad9Validation.DnsApi]::Read([guid]$baseline.adapter_id, $family.ipv6)
     if (([string]$actual.NameServer) -ne ([string]$family.snapshot.NameServer)) { throw 'Service validation left changed DNS settings.' }
 }
-& (Join-Path $PSScriptRoot '..\Uninstall-DevelopmentService.ps1')
+$removal = Join-Path $PSScriptRoot '..\Uninstall-DevelopmentService.ps1'
+$expectedHash = (Get-FileHash -LiteralPath $binary).Hash
+# Drop unreferenced controllers from the earlier test checks before deliberately
+# retaining one real SCM handle across deletion.
+[GC]::Collect()
+[GC]::WaitForPendingFinalizers()
+$heldService = Get-Service Quad9Connect
+$null = $heldService.ServiceHandle
+try {
+    $deferred = $false
+    try { & $removal -RemovalTimeoutSeconds 0 } catch { $deferred = $_.Exception.Message -like '*deletion did not finish*' }
+    if (-not $deferred -or -not (Test-Path -LiteralPath $binary) -or -not (Test-Path -LiteralPath $logPath)) { throw 'Pending SCM deletion must retain recovery binaries and logs.' }
+} finally { $heldService.Dispose() }
+$wrongHashRefused = $false
+try { & $removal -FinishPendingRemoval -ExpectedBinarySha256 ('0' * 64) } catch { $wrongHashRefused = $_.Exception.Message -like '*binary changed*' }
+if (-not $wrongHashRefused -or -not (Test-Path -LiteralPath $binary)) { throw 'Deferred cleanup accepted an unknown recovery binary.' }
+& $removal -FinishPendingRemoval -ExpectedBinarySha256 $expectedHash
 if (Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue) { throw 'Development service was not removed.' }
+if (Test-Path -LiteralPath $logPath) { throw 'Safe removal retained operational logs.' }
 Write-Output 'Service validation passed: standard operator control, unauthorized denial, private storage, bounded malformed frames, native enable/restore, durable retry after restart, and uninstall restoration.'
