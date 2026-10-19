@@ -398,11 +398,30 @@ mod http {
             let slot = Arc::new(Slot);
             std::thread::scope(|scope| {
                 let v6_slot = Arc::clone(&slot);
-                let v6 = scope.spawn(move || {
-                    result(ADDRESSES[1], request(ADDRESSES[1], 443, deadline, v6_slot))
-                });
+                let v6 = std::thread::Builder::new()
+                    .name("quad9-direct-ipv6".into())
+                    .spawn_scoped(scope, move || {
+                        result(ADDRESSES[1], request(ADDRESSES[1], 443, deadline, v6_slot))
+                    });
                 let v4 = result(ADDRESSES[0], request(ADDRESSES[0], 443, deadline, slot));
-                vec![v4, v6.join().expect("WinHTTP worker must not panic")]
+                let v6 = match v6 {
+                    Ok(worker) => worker.join().unwrap_or_else(|_| {
+                        result(
+                            ADDRESSES[1],
+                            Err(Failure::Windows(ERROR_WINHTTP_INTERNAL_ERROR)),
+                        )
+                    }),
+                    Err(error) => result(
+                        ADDRESSES[1],
+                        Err(Failure::Windows(
+                            error
+                                .raw_os_error()
+                                .and_then(|code| u32::try_from(code).ok())
+                                .unwrap_or(ERROR_WINHTTP_INTERNAL_ERROR),
+                        )),
+                    ),
+                };
+                vec![v4, v6]
             })
         };
         UpstreamReport { checked_at_unix_seconds, elapsed_ms: started.elapsed().as_millis().min(u64::MAX as u128) as u64, endpoints,

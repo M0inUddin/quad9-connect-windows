@@ -189,7 +189,10 @@ pub struct DiagnosticsReport {
 pub fn probe_diagnostics() -> Result<DiagnosticsReport, NativeError> {
     let deadline = std::time::Instant::now() + PROBE_TIMEOUT;
     std::thread::scope(|scope| {
-        let direct = scope.spawn(|| upstream::probe_until(deadline));
+        let direct = std::thread::Builder::new()
+            .name("quad9-direct-check".into())
+            .spawn_scoped(scope, || upstream::probe_until(deadline))
+            .map_err(|_| NativeError::InvalidData("Cannot start the direct check worker".into()))?;
         let system = probe_system_resolver_with_timeout(
             deadline.saturating_duration_since(std::time::Instant::now()),
         );
