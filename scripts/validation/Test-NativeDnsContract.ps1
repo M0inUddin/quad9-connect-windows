@@ -24,8 +24,12 @@ foreach ($ipv6 in @($false, $true)) {
     if ($snapshot.Code -ne 0) { throw "Native read failed for IPv6=${ipv6}: $($snapshot.Code)" }
     if ($snapshot.ProfileNameServer -or $snapshot.ProfileCount -ne 0) { throw 'Profile DNS settings require separate validation.' }
     $protocol = if ($ipv6) { 'Tcpip6' } else { 'Tcpip' }
-    $key = "HKLM:\SYSTEM\CurrentControlSet\Services\$protocol\Parameters\Interfaces\{$id}"
-    $static = Get-ItemPropertyValue -LiteralPath $key -Name NameServer -ErrorAction SilentlyContinue
+    $key = "SYSTEM\CurrentControlSet\Services\$protocol\Parameters\Interfaces\{$id}"
+    $static = $null
+    $registryKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($key)
+    if ($null -ne $registryKey) {
+        try { $static = $registryKey.GetValue('NameServer', $null) } finally { $registryKey.Dispose() }
+    }
     $normalize = { param($text) (([string]$text -split '[,\s]+' | Where-Object { $_ }) -join ',').ToLowerInvariant() }
     if ((& $normalize $static) -ne (& $normalize $snapshot.NameServer)) {
         throw "API and static configuration disagree for IPv6=$ipv6"
