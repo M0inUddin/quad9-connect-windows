@@ -5,6 +5,8 @@ type BridgeWindow = Window & {
   trayQueueTest: {
     calls: string[];
     diagnostics: number;
+    listenersWaiting: number;
+    releaseListeners?: () => void;
     releaseInitial?: () => void;
     releaseDiagnostic?: () => void;
     emit: (event: string, payload: unknown) => void;
@@ -16,12 +18,13 @@ test("tray diagnostics survive startup navigation and coalesce behind a busy act
 }) => {
   await page.addInitScript(() => {
     let next = 0;
-    let diagnosticPending = true;
+    let diagnosticPending = false;
     const callbacks = new Map<number, (event: unknown) => void>();
     const listeners = new Map<string, Set<number>>();
     const bridge: BridgeWindow["trayQueueTest"] = {
       calls: [],
       diagnostics: 0,
+      listenersWaiting: 0,
       emit(event, payload) {
         if (event === "navigate" && payload === "diagnostics") diagnosticPending = true;
         listeners
@@ -31,6 +34,9 @@ test("tray diagnostics survive startup navigation and coalesce behind a busy act
     };
     const initialRead = new Promise<void>((resolve) => {
       bridge.releaseInitial = resolve;
+    });
+    const listenerRegistration = new Promise<void>((resolve) => {
+      bridge.releaseListeners = resolve;
     });
     Object.assign(window, {
       isTauri: true,
@@ -45,6 +51,8 @@ test("tray diagnostics survive startup navigation and coalesce behind a busy act
           args: { event?: string; handler?: number; request?: Request } = {},
         ) {
           if (command === "plugin:event|listen") {
+            bridge.listenersWaiting++;
+            await listenerRegistration;
             if (!listeners.has(args.event!))
               listeners.set(args.event!, new Set());
             listeners.get(args.event!)!.add(args.handler!);
@@ -110,6 +118,15 @@ test("tray diagnostics survive startup navigation and coalesce behind a busy act
     });
   });
   await page.goto("/");
+  await expect.poll(() => page.evaluate(() => (window as BridgeWindow).trayQueueTest.listenersWaiting)).toBeGreaterThanOrEqual(6);
+  expect(await page.evaluate(() => (window as BridgeWindow).trayQueueTest.calls)).toEqual([]);
+  // These native actions arrive while no navigation listener exists yet.
+  await page.evaluate(() => {
+    (window as BridgeWindow).trayQueueTest.emit("navigate", "diagnostics");
+    (window as BridgeWindow).trayQueueTest.emit("navigate", "settings");
+    (window as BridgeWindow).trayQueueTest.releaseListeners!();
+  });
+  await expect.poll(() => page.evaluate(() => (window as BridgeWindow).trayQueueTest.calls.includes("get_status"))).toBe(true);
   await expect
     .poll(() =>
       page.evaluate(

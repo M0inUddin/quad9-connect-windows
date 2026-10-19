@@ -23,7 +23,12 @@ import type {
 type View = "connection" | "diagnostics" | "settings";
 type MonitorFailure = { generation: number; message: string };
 type TrayResult = { Ok: Response } | { Err: string };
-type InterfaceContext = { view: View; document_id: number; diagnostic_pending: boolean; tray_result: TrayResult | null };
+type InterfaceContext = {
+  view: View;
+  document_id: number;
+  diagnostic_pending: boolean;
+  tray_result: TrayResult | null;
+};
 const copy = {
   off: [
     "Ready when you are",
@@ -104,6 +109,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   const diagnosticQueued = useRef(false);
   const retentionSequence = useRef(0);
   const documentId = useRef<number | null>(null);
+  const nativeListenersReady = useRef<Promise<void>>(Promise.resolve());
   const retry = useRef<Request | null>(null);
   const observationEpoch = useRef(0);
   const nativeGeneration = useRef(0);
@@ -155,40 +161,6 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
     setProbe(null);
     if (lock.current) refreshPending.current = true;
     else if (!document.hidden) refresh().catch(() => setStatus(null));
-  }, [refresh]);
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      if (isTauri()) {
-        const context = await invoke<InterfaceContext>("interface_context", { newDocument: true });
-        if (context) {
-          documentId.current = context.document_id;
-          setView(context.view);
-          if (context.tray_result) acceptTrayResult(context.tray_result);
-          if (context.diagnostic_pending) diagnosticQueued.current = true;
-          await refresh();
-          return;
-        }
-      }
-      await refresh();
-    })()
-      .catch((e) => {
-        if (alive) {
-          setStatus(null);
-          setError(String(e.message ?? e));
-        }
-      })
-      .finally(() => {
-        if (alive) {
-          initializing.current = false;
-          if (diagnosticQueued.current) requestTrayDiagnostic();
-          else setBusy(null);
-        }
-      });
-    return () => {
-      alive = false;
-    };
   }, [refresh]);
   useEffect(() => {
     try {
@@ -267,6 +239,14 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
     const tray = listen<TrayResult>("tray-result", (event) =>
       acceptTrayResult(event.payload),
     );
+    nativeListenersReady.current = Promise.all([
+      unlisten,
+      changed,
+      network,
+      monitorError,
+      diagnostic,
+      tray,
+    ]).then(() => {});
     const close = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.key.toLowerCase() === "w") {
         event.preventDefault();
@@ -281,6 +261,44 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
       );
     };
   }, [invalidate]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (isTauri()) {
+        await nativeListenersReady.current;
+        if (!alive) return;
+        const context = await invoke<InterfaceContext>("interface_context", {
+          newDocument: true,
+        });
+        if (context) {
+          documentId.current = context.document_id;
+          setView(context.view);
+          if (context.tray_result) acceptTrayResult(context.tray_result);
+          if (context.diagnostic_pending) diagnosticQueued.current = true;
+          await refresh();
+          return;
+        }
+      }
+      await refresh();
+    })()
+      .catch((e) => {
+        if (alive) {
+          setStatus(null);
+          setError(String(e.message ?? e));
+        }
+      })
+      .finally(() => {
+        if (alive) {
+          initializing.current = false;
+          if (diagnosticQueued.current) requestTrayDiagnostic();
+          else setBusy(null);
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [refresh]);
 
   function acceptTrayResult(result: TrayResult) {
     if ("Err" in result) setError(result.Err);
