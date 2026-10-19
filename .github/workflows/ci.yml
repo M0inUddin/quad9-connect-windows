@@ -1,0 +1,41 @@
+name: Rust foundation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable action
+        with:
+          toolchain: 1.99.1
+          components: clippy, rustfmt
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - run: cargo run --locked -p quad9-cli -- --help
+      - name: Inspect Windows adapters without changing DNS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $output = cargo run --locked -p quad9-cli -- adapters --json
+          if ($LASTEXITCODE -ne 0) { throw 'Adapter inspection failed' }
+          $report = $output | ConvertFrom-Json
+          if ($report.schema_version -ne 1) { throw 'Unexpected diagnostics schema' }
+          Write-Output "Native adapter inspection passed. Adapter count: $($report.adapters.Count)"

@@ -1,0 +1,18 @@
+[package]
+name = "quad9-native"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+quad9-core = { path = "../quad9-core" }
+serde.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_System_LibraryLoader"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,18 @@
+[package]
+name = "quad9-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "quad9-inspect"
+path = "src/main.rs"
+
+[dependencies]
+quad9-native = { path = "../quad9-native" }
+serde_json.workspace = true
+
+[lints]
+workspace = true

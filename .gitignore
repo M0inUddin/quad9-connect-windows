@@ -34,3 +34,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Rust build output and local diagnostics
+/target/
+*.diagnostics.json
