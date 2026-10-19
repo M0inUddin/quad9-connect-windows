@@ -2,7 +2,7 @@
 use quad9_service::client::{ClientCoordinator, ObservedResponse};
 use quad9_service::protocol::{Command, Request, Response, ResultBody};
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
     Arc, Condvar, Mutex,
 };
 use tauri::{
@@ -24,7 +24,7 @@ struct Host {
     status: MenuItem<tauri::Wry>,
     stop: Arc<AtomicBool>,
     monitor_error: Arc<Mutex<Option<MonitorFailure>>>,
-    retain_window: Arc<AtomicBool>,
+    retention: Arc<AtomicU8>,
     retention_sequence: Arc<AtomicU64>,
     visibility_request: Arc<AtomicU64>,
     diagnostic_pending: Arc<AtomicBool>,
@@ -34,6 +34,9 @@ struct Host {
     tray_result: Arc<Mutex<Option<Result<Response, String>>>>,
 }
 static NEXT: AtomicU64 = AtomicU64::new(0);
+const IDLE: u8 = 0;
+const RETAINED: u8 = 1;
+const DESTROYING: u8 = 2;
 fn request(command: Command) -> Request {
     let time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -215,32 +218,46 @@ fn interface_context(app: tauri::AppHandle) -> InterfaceContext {
 }
 
 #[tauri::command]
-async fn retain_interface(
+fn retain_interface(
     app: tauri::AppHandle,
     window: tauri::Window,
     retain: bool,
     sequence: Option<u64>,
 ) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let host = app.state::<Host>();
-        let _transition = host.window_transition.lock().map_err(|e| e.to_string())?;
-        if !is_current_window(&app, &window) {
-            return Err("The requesting interface has already closed".into());
+    // Synchronous IPC records retention before a later CloseRequested can
+    // dispatch a worker. Destruction atomically claims IDLE, so an accepted
+    // busy reservation can never lose its document to a queued destroy.
+    let host = app.state::<Host>();
+    if !is_current_window(&app, &window) {
+        return Err("The requesting interface has already closed".into());
+    }
+    if let Some(sequence) = sequence {
+        if sequence <= host.retention_sequence.load(Ordering::Acquire) {
+            return Ok(());
         }
-        if let Some(sequence) = sequence {
-            if sequence <= host.retention_sequence.load(Ordering::Acquire) {
-                return Ok(());
+        host.retention_sequence.store(sequence, Ordering::Release);
+    }
+    host.retention
+        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+            (current != DESTROYING).then_some(if retain { RETAINED } else { IDLE })
+        })
+        .map_err(|_| "The requesting interface is already closing".to_owned())?;
+    if !retain {
+        std::thread::spawn(move || {
+            let result = (|| -> Result<(), String> {
+                let host = app.state::<Host>();
+                let _transition = host.window_transition.lock().map_err(|e| e.to_string())?;
+                if is_current_window(&app, &window) && matches!(window.is_visible(), Ok(false)) {
+                    destroy_window(&app, &window)?;
+                }
+                Ok(())
+            })();
+            if let Err(error) = result {
+                eprintln!("Could not release interface: {error}");
             }
-            host.retention_sequence.store(sequence, Ordering::Release);
-        }
-        host.retain_window.store(retain, Ordering::Release);
-        if !retain && matches!(window.is_visible(), Ok(false)) {
-            destroy_window(&app, &window)?;
-        }
-        Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+        });
+    }
+    Ok(())
 }
 
 fn is_current_window(app: &tauri::AppHandle, window: &tauri::Window) -> bool {
@@ -259,19 +276,30 @@ fn is_current_window(app: &tauri::AppHandle, window: &tauri::Window) -> bool {
 // manager. The run callback signals that removal before a reopen can proceed.
 fn destroy_window(app: &tauri::AppHandle, window: &tauri::Window) -> Result<(), String> {
     let host = app.state::<Host>();
-    let (generation, changed) = &*host.destroyed;
-    let before = *generation.lock().map_err(|e| e.to_string())?;
-    window.destroy().map_err(|e| e.to_string())?;
-    let current = generation.lock().map_err(|e| e.to_string())?;
-    let (_completed, timeout) = changed
-        .wait_timeout_while(current, std::time::Duration::from_secs(10), |value| {
-            *value == before
-        })
-        .map_err(|e| e.to_string())?;
-    if timeout.timed_out() {
-        return Err("Window destruction did not finish before its deadline".into());
+    if host
+        .retention
+        .compare_exchange(IDLE, DESTROYING, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return Ok(());
     }
-    Ok(())
+    let result = (|| {
+        let (generation, changed) = &*host.destroyed;
+        let before = *generation.lock().map_err(|e| e.to_string())?;
+        window.destroy().map_err(|e| e.to_string())?;
+        let current = generation.lock().map_err(|e| e.to_string())?;
+        let (_completed, timeout) = changed
+            .wait_timeout_while(current, std::time::Duration::from_secs(10), |value| {
+                *value == before
+            })
+            .map_err(|e| e.to_string())?;
+        if timeout.timed_out() {
+            return Err("Window destruction did not finish before its deadline".into());
+        }
+        Ok(())
+    })();
+    host.retention.store(IDLE, Ordering::Release);
+    result
 }
 
 fn hide_interface(window: tauri::Window) {
@@ -291,9 +319,7 @@ fn hide_interface(window: tauri::Window) {
                 return Ok(());
             }
             window.hide().map_err(|e| e.to_string())?;
-            if !host.retain_window.load(Ordering::Acquire) {
-                destroy_window(&app, &window)?;
-            }
+            destroy_window(&app, &window)?;
             Ok(())
         })();
         if let Err(error) = result {
@@ -388,7 +414,7 @@ fn main() {
                 status,
                 stop: Arc::new(AtomicBool::new(false)),
                 monitor_error: Arc::new(Mutex::new(None)),
-                retain_window: Arc::new(AtomicBool::new(false)),
+                retention: Arc::new(AtomicU8::new(IDLE)),
                 retention_sequence: Arc::new(AtomicU64::new(0)),
                 visibility_request: Arc::new(AtomicU64::new(0)),
                 diagnostic_pending: Arc::new(AtomicBool::new(false)),

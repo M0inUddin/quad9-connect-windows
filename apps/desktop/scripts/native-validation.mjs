@@ -220,6 +220,21 @@ try {
         single_instance_reopen: true,
         preferences_preserved: true,
       };
+      // Post the busy reservation and close without waiting for the first
+      // response. A title-bar close must not overtake accepted retention.
+      await page.evaluate(async () => {
+        window.quad9RetentionMarker = "reservation-before-close";
+        const retention = window.__TAURI_INTERNALS__.invoke("retain_interface", { retain: true });
+        const close = window.__TAURI_INTERNALS__.invoke("plugin:window|close", { label: "main" });
+        await Promise.all([retention, close]);
+      });
+      await delay(300);
+      expect(page.isClosed()).toBe(false);
+      await expect.poll(() => isVisible(page)).toBe(false);
+      await browser.close();
+      ({ browser, page } = await reopen(executable, port, child));
+      expect(await page.evaluate(() => window.quad9RetentionMarker)).toBe("reservation-before-close");
+      report.lifecycle.retention_recorded_before_close = true;
       // A later Open must win even if the close worker has not run yet.
       for (let cycle = 0; cycle < 6; cycle++) {
         await page.evaluate(() =>
