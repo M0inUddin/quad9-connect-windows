@@ -2672,6 +2672,7 @@ dependencies = [
  "quad9-core",
  "quad9-native",
  "quad9-service",
+ "serde",
  "serde_json",
  "tauri",
  "tauri-build",

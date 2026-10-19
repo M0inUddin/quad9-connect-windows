@@ -20,6 +20,7 @@ import type {
 } from "./protocol";
 
 type View = "connection" | "diagnostics" | "settings";
+type MonitorFailure = { generation: number; message: string };
 const copy = {
   off: [
     "Ready when you are",
@@ -197,20 +198,25 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
       );
       invalidate();
     });
-    const reportMonitorError = () => {
+    const reportMonitorError = (failure?: MonitorFailure) => {
+      if (failure)
+        nativeGeneration.current = Math.max(
+          nativeGeneration.current,
+          failure.generation,
+        );
       setMonitorUnavailable(true);
       invalidate();
     };
-    const monitorError = listen<string>(
+    const monitorError = listen<MonitorFailure>(
       "network-monitor-error",
-      reportMonitorError,
+      (event) => reportMonitorError(event.payload),
     );
     // Registration may fail before the webview has installed its listeners.
-    invoke<string | null>("network_monitor_error")
+    invoke<MonitorFailure | null>("network_monitor_error")
       .then((error) => {
         if (error) reportMonitorError();
       })
-      .catch(reportMonitorError);
+      .catch(() => reportMonitorError());
     type TrayResult = { Ok: Response } | { Err: string };
     const diagnostic = listen<{ generation: number; result: TrayResult }>(
       "diagnostic-result",

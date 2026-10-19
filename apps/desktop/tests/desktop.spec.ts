@@ -321,11 +321,45 @@ test("a native monitoring failure clears old evidence and remains visible after 
       window as unknown as {
         emitNativeTest: (event: string, payload: unknown) => void;
       }
-    ).emitNativeTest("network-monitor-error", "injected failure"),
+    ).emitNativeTest("network-monitor-error", {
+      generation: 7,
+      message: "injected failure",
+    }),
   );
   await expect(
     page.getByText("Automatic DNS checks are unavailable", { exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByText("DNS over HTTPS observed", { exact: true }),
+  ).toHaveCount(0);
+  // A tray lookup completed before the failure, but its event arrived later.
+  await page.evaluate(() =>
+    (
+      window as unknown as {
+        emitNativeTest: (event: string, payload: unknown) => void;
+      }
+    ).emitNativeTest("diagnostic-result", {
+      generation: 6,
+      result: {
+        Ok: {
+          version: 1,
+          id: "delayed-tray-diagnostic",
+          result: {
+            type: "diagnostics",
+            report: {
+              outcome: "doh_observed",
+              elapsed_ms: 1,
+              checked_at_unix_seconds: 1,
+              scope: "One delayed mocked tray lookup",
+            },
+          },
+        },
+      },
+    }),
+  );
+  // Tab interactions flush the event's state update before the absence check.
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
   await expect(
     page.getByText("DNS over HTTPS observed", { exact: true }),
   ).toHaveCount(0);

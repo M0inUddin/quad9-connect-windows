@@ -23,7 +23,7 @@ Each one-shot registration watches values, subtree names, and security changes. 
 
 Shutdown signals a stop event and joins the registry thread before closing its keys and events. Startup or runtime registration failures invalidate old evidence and leave a persistent notice in the interface. A manual check can still return a fresh scoped result, but it cannot clear the notice. Quitting and relaunching the app retries registration. Closing its window only hides it in the tray. No DNS query names or registry values are collected by this observer.
 
-Desktop setup waits until subscriptions are armed or their startup failure has been saved before exposing the webview. Successful registration advances the generation and queues a status reconciliation, so the tray and any reads begun during registration cannot retain earlier evidence. This closes the gap before registry notifications begin, since they cannot report earlier edits.
+Desktop setup waits until subscriptions are armed or their startup failure has been saved before exposing the webview. Successful registration advances the generation and queues a status reconciliation, so the tray and any reads begun during registration cannot retain earlier evidence. This closes the gap before registry notifications begin, since they cannot report earlier edits. Both live and saved failure reports include their native generation, so a delayed tray diagnostic from before the failure cannot republish old evidence.
 
 ## Validation and limits
 

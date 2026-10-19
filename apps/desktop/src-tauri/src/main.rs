@@ -11,13 +11,19 @@ use tauri::{
     Emitter, Manager,
 };
 
+#[derive(Clone, serde::Serialize)]
+struct MonitorFailure {
+    generation: u64,
+    message: String,
+}
+
 #[derive(Clone)]
 struct Host {
     requests: Arc<ClientCoordinator>,
     restore: MenuItem<tauri::Wry>,
     status: MenuItem<tauri::Wry>,
     stop: Arc<AtomicBool>,
-    monitor_error: Arc<Mutex<Option<String>>>,
+    monitor_error: Arc<Mutex<Option<MonitorFailure>>>,
 }
 static NEXT: AtomicU64 = AtomicU64::new(0);
 fn request(command: Command) -> Request {
@@ -121,15 +127,19 @@ fn observe_network(app: tauri::AppHandle) -> std::io::Result<()> {
             })();
             if let Err(error) = result {
                 eprintln!("Network notifications unavailable: {error}");
+                let failure = MonitorFailure {
+                    generation: generation.load(Ordering::SeqCst),
+                    message: error.to_string(),
+                };
                 if let Ok(mut saved) = host.monitor_error.lock() {
-                    *saved = Some(error.to_string());
+                    *saved = Some(failure.clone());
                 }
                 // Persist startup failure before setup exposes the webview.
                 if let Some(ready) = ready.take() {
                     let _ = ready.send(());
                 }
                 unknown_tray(&app, "Automatic checks unavailable");
-                let _ = app.emit("network-monitor-error", error.to_string());
+                let _ = app.emit("network-monitor-error", failure);
             }
         })?;
     // Initial webview reads must start after subscriptions are armed, or after
@@ -138,7 +148,7 @@ fn observe_network(app: tauri::AppHandle) -> std::io::Result<()> {
 }
 
 #[tauri::command]
-fn network_monitor_error(app: tauri::AppHandle) -> Option<String> {
+fn network_monitor_error(app: tauri::AppHandle) -> Option<MonitorFailure> {
     app.state::<Host>()
         .monitor_error
         .lock()
