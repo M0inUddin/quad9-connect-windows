@@ -23,11 +23,15 @@ Each one-shot registration watches values, subtree names, and security changes. 
 
 Shutdown signals a stop event and joins the registry thread before closing its keys and events. Startup or runtime registration failures invalidate old evidence and leave a persistent notice in the interface. A manual check can still return a fresh scoped result, but it cannot clear the notice. Restarting the interface retries registration. No DNS query names or registry values are collected by this observer.
 
+Desktop setup waits until subscriptions are armed or their startup failure has been saved before exposing the webview. Successful registration advances the generation and queues a status reconciliation, so the tray and any reads begun during registration cannot retain earlier evidence. This closes the gap before registry notifications begin, since they cannot report earlier edits.
+
 ## Validation and limits
 
 Windows tests exercise real notification registration, initial callbacks, repeated cancellation, and event coalescing. Private HKCU test keys cover repeated value edits, missing policy keys, deletion and recreation, shutdown, and partial startup failure. They never change developer-host DNS or policy settings. Portable client tests cover a queued diagnostic, a generation change during a check, and preservation of a known mutation receipt. Browser tests cover diagnostic invalidation and post-action refresh, plus a mocked native failure event that leaves the warning visible after a manual check.
 
 Three ignored native tests are selected explicitly by CI in disposable Windows Server 2022 and 2025 VMs. With no IP Helper subscriptions, they check real IPv4/IPv6 DNS writes and exact restores, DoH property changes with unchanged server addresses, and a uniquely named policy marker that blocks backend writes until removed. Each DNS baseline is restored even if an observation assertion panics. The policy marker is removed; a newly created empty policy container may remain in the disposable VM. These checks do not establish physical network handoff, sleep/resume, VPN, or Windows 11 behavior.
+
+The DoH property test uses the backend's complete settings write and subscribes only to the DNS client service tree. TCP/IP address-key writes cannot produce that observer's notification. Readback must show the changed template and identical server addresses for both families.
 
 Registry hive restores through `RegRestoreKey` are not reported by the Windows notification API, and changes outside these roots are not covered. Focusing or reopening the interface still reads current service state, and the service checks ownership before every mutation. No cached diagnostic establishes protection across every adapter or application.
 

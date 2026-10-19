@@ -147,7 +147,10 @@ impl NetworkWatcher {
             }
             watcher.registrations.push(handle);
         }
-        watcher.registry = Some(registry::RegistryWatcher::start(signal)?);
+        watcher.registry = Some(registry::RegistryWatcher::start(signal.clone())?);
+        // Reconcile state read before or during registration. Registry events
+        // cannot report changes that preceded their individual subscriptions.
+        signal.mark();
         Ok(watcher)
     }
 
@@ -182,6 +185,16 @@ impl Drop for NetworkWatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_invalidates_prior_reads_and_queues_reconciliation() {
+        let generation = Arc::new(AtomicU64::new(41));
+        // No initial IP callbacks are requested. Successful registration itself
+        // must invalidate evidence gathered before all subscriptions were ready.
+        let watcher = NetworkWatcher::start(generation.clone()).unwrap();
+        assert!(generation.load(Ordering::SeqCst) > 41);
+        assert!(watcher.wait(Duration::ZERO).unwrap());
+    }
 
     #[test]
     fn registered_windows_callbacks_wake_and_can_be_cancelled_repeatedly() {

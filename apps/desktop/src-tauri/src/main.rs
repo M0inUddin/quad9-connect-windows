@@ -69,12 +69,17 @@ fn unknown_tray(app: &tauri::AppHandle, label: &str) {
 
 fn observe_network(app: tauri::AppHandle) -> std::io::Result<()> {
     let host = app.state::<Host>().inner().clone();
+    let (ready, started) = std::sync::mpsc::sync_channel(1);
     std::thread::Builder::new()
         .name("quad9-network-observer".into())
         .spawn(move || {
+            let mut ready = Some(ready);
             let generation = host.requests.generation.clone();
             let result = (|| {
                 let watcher = quad9_native::network::NetworkWatcher::start(generation.clone())?;
+                if let Some(ready) = ready.take() {
+                    let _ = ready.send(());
+                }
                 while !host.stop.load(Ordering::Acquire) {
                     if !watcher.wait(std::time::Duration::from_millis(250))? {
                         continue;
@@ -119,11 +124,17 @@ fn observe_network(app: tauri::AppHandle) -> std::io::Result<()> {
                 if let Ok(mut saved) = host.monitor_error.lock() {
                     *saved = Some(error.to_string());
                 }
+                // Persist startup failure before setup exposes the webview.
+                if let Some(ready) = ready.take() {
+                    let _ = ready.send(());
+                }
                 unknown_tray(&app, "Automatic checks unavailable");
                 let _ = app.emit("network-monitor-error", error.to_string());
             }
-        })
-        .map(|_| ())
+        })?;
+    // Initial webview reads must start after subscriptions are armed, or after
+    // their failure has been saved for network_monitor_error to retrieve.
+    started.recv().map_err(std::io::Error::other)
 }
 
 #[tauri::command]
