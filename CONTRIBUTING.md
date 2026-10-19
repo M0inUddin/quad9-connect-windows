@@ -25,7 +25,7 @@ cargo run --locked -p quad9-cli -- adapters --json
 
 `adapters` reports local adapter identifiers, names, and DNS settings. Review its output before publishing it. `probe` sends one diagnostic query through the system resolver and does not save a report. Exit code 3 means the probe did not observe DoH. A failed or timed-out lookup returns exit code 1. Invalid arguments return exit code 2.
 
-The inspection tool does not install a service, request administrator rights, or modify DNS. The separate service has a narrow mutation contract. Native write and restore experiments belong in disposable Windows VMs with snapshots. See the [service guide](docs/service-development.md) for the privileged development workflow.
+The inspection tool does not install a service, request administrator rights, or modify DNS. The separate service has a narrow mutation contract. Use disposable Windows VMs with snapshots for native write and restore experiments by default. An explicitly authorized Windows 11 host run can use the guarded host validation runner described in the [service guide](docs/service-development.md).
 
 ## Review expectations
 
