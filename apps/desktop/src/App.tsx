@@ -20,6 +20,7 @@ import type {
 } from "./protocol";
 
 type View = "connection" | "diagnostics" | "settings";
+type MonitorFailure = { generation: number; message: string };
 const copy = {
   off: [
     "Ready when you are",
@@ -92,6 +93,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   const [prefs, setPrefs] = useState(() => loadPreferences(localStorage));
   const [busy, setBusy] = useState<string | null>("Reading service state");
   const [error, setError] = useState<string | null>(null);
+  const [monitorUnavailable, setMonitorUnavailable] = useState(false);
   const [probe, setProbe] = useState<Probe | null>(null);
   const lock = useRef(false);
   const retry = useRef<Request | null>(null);
@@ -196,20 +198,25 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
       );
       invalidate();
     });
-    const reportMonitorError = () =>
-      setError(
-        "Network monitoring is unavailable. Reopen the app after changing networks.",
-      );
-    const monitorError = listen<string>(
+    const reportMonitorError = (failure?: MonitorFailure) => {
+      if (failure)
+        nativeGeneration.current = Math.max(
+          nativeGeneration.current,
+          failure.generation,
+        );
+      setMonitorUnavailable(true);
+      invalidate();
+    };
+    const monitorError = listen<MonitorFailure>(
       "network-monitor-error",
-      reportMonitorError,
+      (event) => reportMonitorError(event.payload),
     );
     // Registration may fail before the webview has installed its listeners.
-    invoke<string | null>("network_monitor_error")
+    invoke<MonitorFailure | null>("network_monitor_error")
       .then((error) => {
-        if (error) reportMonitorError();
+        if (error) reportMonitorError(error);
       })
-      .catch(reportMonitorError);
+      .catch(() => reportMonitorError());
     type TrayResult = { Ok: Response } | { Err: string };
     const diagnostic = listen<{ generation: number; result: TrayResult }>(
       "diagnostic-result",
@@ -379,6 +386,18 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         ))}
       </nav>
       <main id="main-content">
+        {monitorUnavailable && (
+          <div className="error-box" role="alert">
+            <Icon name="alert" />
+            <div>
+              <strong>Automatic DNS checks are unavailable</strong>
+              <p>
+                Quit and reopen the app to restart monitoring. Manual checks and
+                restoration remain available.
+              </p>
+            </div>
+          </div>
+        )}
         {error && (
           <div className="error-box" role="alert">
             <Icon name="alert" />

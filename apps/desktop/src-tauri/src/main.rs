@@ -11,13 +11,19 @@ use tauri::{
     Emitter, Manager,
 };
 
+#[derive(Clone, serde::Serialize)]
+struct MonitorFailure {
+    generation: u64,
+    message: String,
+}
+
 #[derive(Clone)]
 struct Host {
     requests: Arc<ClientCoordinator>,
     restore: MenuItem<tauri::Wry>,
     status: MenuItem<tauri::Wry>,
     stop: Arc<AtomicBool>,
-    monitor_error: Arc<Mutex<Option<String>>>,
+    monitor_error: Arc<Mutex<Option<MonitorFailure>>>,
 }
 static NEXT: AtomicU64 = AtomicU64::new(0);
 fn request(command: Command) -> Request {
@@ -69,62 +75,80 @@ fn unknown_tray(app: &tauri::AppHandle, label: &str) {
 
 fn observe_network(app: tauri::AppHandle) -> std::io::Result<()> {
     let host = app.state::<Host>().inner().clone();
+    let (ready, started) = std::sync::mpsc::sync_channel(1);
     std::thread::Builder::new()
         .name("quad9-network-observer".into())
         .spawn(move || {
+            let mut ready = Some(ready);
             let generation = host.requests.generation.clone();
-            let watcher = match quad9_native::network::NetworkWatcher::start(generation.clone()) {
-                Ok(watcher) => watcher,
-                Err(error) => {
-                    eprintln!("Network notifications unavailable: {error}");
-                    if let Ok(mut saved) = host.monitor_error.lock() {
-                        *saved = Some(error.to_string());
+            let result = (|| {
+                let watcher = quad9_native::network::NetworkWatcher::start(generation.clone())?;
+                if let Some(ready) = ready.take() {
+                    let _ = ready.send(());
+                }
+                while !host.stop.load(Ordering::Acquire) {
+                    if !watcher.wait(std::time::Duration::from_millis(250))? {
+                        continue;
                     }
-                    let _ = app.emit("network-monitor-error", error.to_string());
-                    return;
-                }
-            };
-            while !host.stop.load(Ordering::Acquire) {
-                if !watcher.wait(std::time::Duration::from_millis(250)) {
-                    continue;
-                }
-                unknown_tray(&app, "Network changed; checking DNS");
-                let _ = app.emit("network-changed", generation.load(Ordering::SeqCst));
-                // A burst gets one read after 250 ms quiet, or after two seconds at
-                // most. The wait consumes notifications, never polls adapter state.
-                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-                loop {
-                    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-                    if remaining.is_zero()
-                        || !watcher.wait(remaining.min(std::time::Duration::from_millis(250)))
-                    {
+                    unknown_tray(&app, "Network changed; checking DNS");
+                    let _ = app.emit("network-changed", generation.load(Ordering::SeqCst));
+                    // A burst gets one read after 250 ms quiet, or after two seconds at
+                    // most. The wait consumes notifications, never polls adapter state.
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+                    loop {
+                        let remaining =
+                            deadline.saturating_duration_since(std::time::Instant::now());
+                        if remaining.is_zero()
+                            || !watcher
+                                .wait(remaining.min(std::time::Duration::from_millis(250)))?
+                        {
+                            break;
+                        }
+                    }
+                    if host.stop.load(Ordering::Acquire) {
                         break;
                     }
-                }
-                if host.stop.load(Ordering::Acquire) {
-                    break;
-                }
-                // Refresh once more after the burst so a read started at the
-                // first signal cannot leave a view of an intermediate network.
-                let _ = app.emit("network-changed", generation.load(Ordering::SeqCst));
-                match host
-                    .requests
-                    .execute(&request(Command::GetStatus), quad9_service::host::send)
-                {
-                    Ok(observed)
-                        if matches!(observed.response.result, ResultBody::Status { .. }) =>
+                    // Refresh once more after the burst so a read started at the
+                    // first signal cannot leave a view of an intermediate network.
+                    let _ = app.emit("network-changed", generation.load(Ordering::SeqCst));
+                    match host
+                        .requests
+                        .execute(&request(Command::GetStatus), quad9_service::host::send)
                     {
-                        update_tray(&app, &observed.response)
+                        Ok(observed)
+                            if matches!(observed.response.result, ResultBody::Status { .. }) =>
+                        {
+                            update_tray(&app, &observed.response)
+                        }
+                        _ => unknown_tray(&app, "Service unavailable"),
                     }
-                    _ => unknown_tray(&app, "Service unavailable"),
                 }
+                Ok::<(), quad9_native::NativeError>(())
+            })();
+            if let Err(error) = result {
+                eprintln!("Network notifications unavailable: {error}");
+                let failure = MonitorFailure {
+                    generation: generation.load(Ordering::SeqCst),
+                    message: error.to_string(),
+                };
+                if let Ok(mut saved) = host.monitor_error.lock() {
+                    *saved = Some(failure.clone());
+                }
+                // Persist startup failure before setup exposes the webview.
+                if let Some(ready) = ready.take() {
+                    let _ = ready.send(());
+                }
+                unknown_tray(&app, "Automatic checks unavailable");
+                let _ = app.emit("network-monitor-error", failure);
             }
-        })
-        .map(|_| ())
+        })?;
+    // Initial webview reads must start after subscriptions are armed, or after
+    // their failure has been saved for network_monitor_error to retrieve.
+    started.recv().map_err(std::io::Error::other)
 }
 
 #[tauri::command]
-fn network_monitor_error(app: tauri::AppHandle) -> Option<String> {
+fn network_monitor_error(app: tauri::AppHandle) -> Option<MonitorFailure> {
     app.state::<Host>()
         .monitor_error
         .lock()

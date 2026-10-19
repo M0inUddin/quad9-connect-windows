@@ -1,8 +1,10 @@
-//! Read-only IP interface, address, and route notifications.
+//! Read-only IP interface, address, route, DNS, and policy notifications.
 //!
 //! Callbacks only advance an observation generation and coalesce a wakeup. They
-//! never inspect adapters, perform IPC, or write DNS. DNS-only registry changes
-//! are outside this subscription's coverage.
+//! never inspect adapters, perform IPC, or write DNS. Registry subscriptions
+//! watch configuration changes independently of the IP notification callbacks.
+
+mod registry;
 
 use crate::NativeError;
 use std::{
@@ -11,7 +13,7 @@ use std::{
     sync::{
         atomic::{AtomicU64, Ordering},
         mpsc::{self, Receiver, SyncSender},
-        Arc,
+        Arc, Mutex,
     },
     time::Duration,
 };
@@ -22,15 +24,38 @@ use windows_sys::Win32::{
 struct Signal {
     generation: Arc<AtomicU64>,
     wake: SyncSender<()>,
+    fault: Mutex<Option<String>>,
+}
+impl Signal {
+    fn mark(&self) {
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        let _ = self.wake.try_send(());
+    }
+    fn fail(&self, message: String) {
+        if let Ok(mut fault) = self.fault.lock() {
+            *fault = Some(message);
+        }
+        self.mark();
+    }
+    fn health(&self) -> Result<(), NativeError> {
+        match self.fault.lock() {
+            Ok(fault) => match fault.as_ref() {
+                Some(message) => Err(NativeError::InvalidData(message.clone())),
+                None => Ok(()),
+            },
+            Err(_) => Err(NativeError::InvalidData(
+                "DNS observer health is unavailable".into(),
+            )),
+        }
+    }
 }
 
 unsafe fn changed(context: *const c_void) {
-    // SAFETY: Each registration borrows the boxed Signal until cancellation has
+    // SAFETY: Each registration borrows the shared Signal until cancellation has
     // drained its callbacks. No callback stores this reference beyond the call.
     let signal = unsafe { &*context.cast::<Signal>() };
-    signal.generation.fetch_add(1, Ordering::SeqCst);
     // One pending wakeup covers any burst; the generation still counts changes.
-    let _ = signal.wake.try_send(());
+    signal.mark();
 }
 
 unsafe extern "system" fn interface_changed(
@@ -61,8 +86,9 @@ unsafe extern "system" fn route_changed(
 /// Own and drop this on the observer thread, never inside a notification callback.
 pub struct NetworkWatcher {
     registrations: Vec<HANDLE>,
-    signal: Option<Box<Signal>>,
+    signal: Option<Arc<Signal>>,
     receiver: Receiver<()>,
+    registry: Option<registry::RegistryWatcher>,
 }
 
 impl NetworkWatcher {
@@ -72,12 +98,17 @@ impl NetworkWatcher {
 
     fn register(generation: Arc<AtomicU64>, initial: bool) -> Result<Self, NativeError> {
         let (wake, receiver) = mpsc::sync_channel(1);
-        let signal = Box::new(Signal { generation, wake });
-        let context = (&*signal as *const Signal).cast();
+        let signal = Arc::new(Signal {
+            generation,
+            wake,
+            fault: Mutex::new(None),
+        });
+        let context = Arc::as_ptr(&signal).cast();
         let mut watcher = Self {
             registrations: Vec::new(),
-            signal: Some(signal),
+            signal: Some(signal.clone()),
             receiver,
+            registry: None,
         };
         for kind in 0..3 {
             let mut handle = ptr::null_mut();
@@ -116,17 +147,25 @@ impl NetworkWatcher {
             }
             watcher.registrations.push(handle);
         }
+        watcher.registry = Some(registry::RegistryWatcher::start(signal.clone())?);
+        // Reconcile state read before or during registration. Registry events
+        // cannot report changes that preceded their individual subscriptions.
+        signal.mark();
         Ok(watcher)
     }
 
     /// Wait for an event, with no adapter polling or DNS query.
-    pub fn wait(&self, timeout: Duration) -> bool {
-        self.receiver.recv_timeout(timeout).is_ok()
+    pub fn wait(&self, timeout: Duration) -> Result<bool, NativeError> {
+        let changed = self.receiver.recv_timeout(timeout).is_ok();
+        self.signal.as_ref().expect("Live subscription").health()?;
+        Ok(changed)
     }
 }
 
 impl Drop for NetworkWatcher {
     fn drop(&mut self) {
+        // Stop and drain registry work before releasing the shared context.
+        self.registry.take();
         let mut drained = true;
         for handle in self.registrations.drain(..) {
             // SAFETY: Drop runs off the callback thread and holds no resource a
@@ -148,12 +187,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn startup_invalidates_prior_reads_and_queues_reconciliation() {
+        let generation = Arc::new(AtomicU64::new(41));
+        // No initial IP callbacks are requested. Successful registration itself
+        // must invalidate evidence gathered before all subscriptions were ready.
+        let watcher = NetworkWatcher::start(generation.clone()).unwrap();
+        assert!(generation.load(Ordering::SeqCst) > 41);
+        assert!(watcher.wait(Duration::ZERO).unwrap());
+    }
+
+    #[test]
     fn registered_windows_callbacks_wake_and_can_be_cancelled_repeatedly() {
         for _ in 0..3 {
             let generation = Arc::new(AtomicU64::new(0));
             let watcher = NetworkWatcher::register(generation.clone(), true).unwrap();
-            assert!(watcher.wait(Duration::from_secs(5)));
-            assert!(generation.load(Ordering::SeqCst) > 0);
+            // Startup contributes one mark; all three requested initial IP
+            // callbacks must contribute too, even if their wakeups coalesce.
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while generation.load(Ordering::SeqCst) < 4 {
+                assert!(watcher
+                    .wait(deadline.saturating_duration_since(std::time::Instant::now()))
+                    .unwrap());
+            }
             drop(watcher);
             let after = generation.load(Ordering::SeqCst);
             std::thread::sleep(Duration::from_millis(20));
@@ -168,6 +223,7 @@ mod tests {
         let signal = Signal {
             generation: generation.clone(),
             wake,
+            fault: Mutex::new(None),
         };
         for _ in 0..100 {
             // SAFETY: The signal is live and each callback returns synchronously.
@@ -176,5 +232,23 @@ mod tests {
         assert_eq!(generation.load(Ordering::SeqCst), 100);
         assert!(receiver.try_recv().is_ok());
         assert!(receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn observer_failure_invalidates_in_flight_checks_and_is_not_a_timeout() {
+        let generation = Arc::new(AtomicU64::new(0));
+        let watcher = NetworkWatcher::start(generation.clone()).unwrap();
+        let before = generation.load(Ordering::SeqCst);
+        watcher
+            .signal
+            .as_ref()
+            .unwrap()
+            .fail("injected notification failure".into());
+        assert!(generation.load(Ordering::SeqCst) > before);
+        assert!(watcher
+            .wait(Duration::from_secs(1))
+            .unwrap_err()
+            .to_string()
+            .contains("injected notification failure"));
     }
 }

@@ -24,6 +24,8 @@ jobs:
         with:
           toolchain: 1.99.1
       - run: cargo build --locked -p quad9-service --features vm-validation
+      - name: Observe real DNS and policy edits without IP notifications
+        run: cargo test --locked -p quad9-native --features vm-validation network::registry::vm_tests -- --ignored --test-threads=1
       - name: Validate the LocalSystem service and standard-user authorization
         shell: pwsh
         run: ./scripts/validation/Test-PrivilegedService.ps1 -BinaryPath ./target/debug/quad9-service.exe
