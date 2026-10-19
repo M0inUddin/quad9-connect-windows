@@ -64,7 +64,7 @@ jobs:
         run: node scripts/native-validation.mjs src-tauri/target/debug/quad9-desktop.exe
       - name: Validate native resource counters under Windows PowerShell and PowerShell 7
         working-directory: apps/desktop
-        run: node scripts/native-resources.mjs src-tauri/target/debug/quad9-desktop.exe ../../output/playwright/native-resources --desktop-only --counter-smoke --verify-pwsh
+        run: node scripts/native-resources.mjs src-tauri/target/debug/quad9-desktop.exe ../../output/playwright/native-resources --desktop-only --counter-smoke --verify-pwsh --service-unavailable
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: quad9-desktop-windows-development

@@ -43,7 +43,9 @@ export async function connect(port, child) {
     }
     await delay(50);
   }
-  throw new Error("Native startup exceeded 30 seconds.");
+  throw new Error(
+    "Native startup exceeded 30 seconds. Run the UI harness unelevated; elevated WebView2 hosts ignore diagnostic environment flags.",
+  );
 }
 export async function reopen(executable, port, child) {
   const second = spawn(executable, [], { windowsHide: true, stdio: "ignore" });

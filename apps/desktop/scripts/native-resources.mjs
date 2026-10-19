@@ -17,6 +17,7 @@ const output = resolve(
 const desktopOnly = process.argv.includes("--desktop-only");
 const shortRun = process.argv.includes("--counter-smoke");
 const verifyPwsh = process.argv.includes("--verify-pwsh");
+const serviceUnavailable = process.argv.includes("--service-unavailable");
 await mkdir(output, { recursive: true });
 const profile = await mkdtemp(join(output, "profile-"));
 const port = await freePort();
@@ -91,8 +92,10 @@ try {
     .flatMap((c) => c.pages())
     .find((p) => /tauri[.:]/.test(p.url()));
   summary.connection_state = await page.getByRole("status").textContent();
-  if (!desktopOnly)
-    await expect(page.getByRole("status")).toHaveText("Ready when you are");
+  if (!desktopOnly || serviceUnavailable)
+    await expect(page.getByRole("status")).toHaveText(
+      serviceUnavailable ? "Service unavailable" : "Ready when you are",
+    );
   await browser.close();
   browser = undefined;
   await sample("window");
