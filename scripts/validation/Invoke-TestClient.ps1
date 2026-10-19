@@ -26,8 +26,9 @@ if ($Mode -in @('oversized', 'malformed')) {
         $reader = [IO.BinaryReader]::new($pipe)
         $size = $reader.ReadUInt32()
         if ($size -gt 65536) { throw 'Oversized response' }
-        $response = [Text.Encoding]::UTF8.GetString($reader.ReadBytes($size)) | ConvertFrom-Json
+        $payload = $reader.ReadBytes($size)
         $pipe.WriteByte(165)
+        $response = [Text.Encoding]::UTF8.GetString($payload) | ConvertFrom-Json
         if ($response.result.type -ne 'error' -or $response.result.code -ne 'invalid_request') { throw 'Malformed command was not rejected.' }
         Write-Output 'malformed-rejected'
         exit 0
