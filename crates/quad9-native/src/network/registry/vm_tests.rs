@@ -11,6 +11,7 @@ use std::{
     sync::atomic::Ordering,
     time::{SystemTime, UNIX_EPOCH},
 };
+use windows_sys::{core::GUID, Win32::NetworkManagement::IpHelper::*};
 
 fn require_disposable_vm() {
     assert_eq!(std::env::var("GITHUB_ACTIONS").as_deref(), Ok("true"));
@@ -110,7 +111,7 @@ fn vm_doh_property_changes_notify_from_dns_client_settings() {
             // while changing only the per-server DoH template text.
             changed.doh[0].template = Some("https://dns.quad9.net:443/dns-query".into());
             let before = signal.generation.load(Ordering::SeqCst);
-            backend.write(&target, &changed).unwrap();
+            write_doh_only(&target, &changed);
             rearmed(&signal, &receiver, before);
             let observed = backend.read(&target).unwrap();
             assert_eq!(observed, changed);
@@ -124,6 +125,58 @@ fn vm_doh_property_changes_notify_from_dns_client_settings() {
             std::panic::resume_unwind(panic);
         }
     }
+}
+
+fn write_doh_only(target: &Target, settings: &DnsSettings) {
+    let templates: Vec<_> = settings
+        .doh
+        .iter()
+        .map(|p| wide(p.template.as_ref().unwrap()))
+        .collect();
+    let mut doh: Vec<_> = settings
+        .doh
+        .iter()
+        .enumerate()
+        .map(|(i, p)| DNS_DOH_SERVER_SETTINGS {
+            Template: templates[i].as_ptr().cast_mut(),
+            Flags: p.flags,
+        })
+        .collect();
+    let mut properties: Vec<_> = settings
+        .doh
+        .iter()
+        .enumerate()
+        .map(|(i, p)| DNS_SERVER_PROPERTY {
+            Version: DNS_SERVER_PROPERTY_VERSION1,
+            ServerIndex: p.server_index,
+            Type: DnsServerDohProperty,
+            Property: DNS_SERVER_PROPERTY_TYPES {
+                DohSettings: &mut doh[i],
+            },
+        })
+        .collect();
+    let raw = DNS_INTERFACE_SETTINGS3 {
+        Version: DNS_INTERFACE_SETTINGS_VERSION3,
+        // Deliberately do not select DNS_SETTING_NAMESERVER. The test must
+        // observe a real DoH-only edit, with no address field being rewritten.
+        Flags: DNS_SETTING_DOH as u64
+            | if target.family == AddressFamily::Ipv6 {
+                DNS_SETTING_IPV6 as u64
+            } else {
+                0
+            },
+        cServerProperties: properties.len() as u32,
+        ServerProperties: properties.as_mut_ptr(),
+        ..Default::default()
+    };
+    let guid = GUID::from_u128(
+        u128::from_str_radix(&target.adapter_id.as_str().replace('-', ""), 16).unwrap(),
+    );
+    // SAFETY: The validated target and all DoH buffers remain live through this
+    // synchronous VM-only call. No NameServer pointer or address flag is passed.
+    let code =
+        unsafe { SetInterfaceDnsSettings(guid, (&raw as *const DNS_INTERFACE_SETTINGS3).cast()) };
+    assert_eq!(code, 0, "DoH-only native write failed");
 }
 
 struct PolicyMarker {

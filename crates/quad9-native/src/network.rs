@@ -51,7 +51,7 @@ impl Signal {
 }
 
 unsafe fn changed(context: *const c_void) {
-    // SAFETY: Each registration borrows the boxed Signal until cancellation has
+    // SAFETY: Each registration borrows the shared Signal until cancellation has
     // drained its callbacks. No callback stores this reference beyond the call.
     let signal = unsafe { &*context.cast::<Signal>() };
     // One pending wakeup covers any burst; the generation still counts changes.
