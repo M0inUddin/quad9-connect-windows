@@ -238,7 +238,7 @@ fn retain_interface(
         host.retention_sequence.store(sequence, Ordering::Release);
     }
     host.retention
-        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+        .try_update(Ordering::AcqRel, Ordering::Acquire, |current| {
             (current != DESTROYING).then_some(if retain { RETAINED } else { IDLE })
         })
         .map_err(|_| "The requesting interface is already closing".to_owned())?;
