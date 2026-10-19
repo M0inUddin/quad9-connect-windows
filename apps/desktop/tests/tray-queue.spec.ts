@@ -44,6 +44,7 @@ test("tray diagnostics survive startup navigation and coalesce behind a busy act
       isTauri: true,
       trayQueueTest: bridge,
       __TAURI_INTERNALS__: {
+        metadata: { currentWindow: { label: "main" } },
         transformCallback(callback: (event: unknown) => void) {
           callbacks.set(++next, callback);
           return next;
@@ -78,6 +79,7 @@ test("tray diagnostics survive startup navigation and coalesce behind a busy act
             diagnosticPending = false;
             return { view: "settings", diagnostic_pending, tray_result: null };
           }
+          if (command === "plugin:window|is_visible") return true;
           if (command !== "service_request" || !args.request)
             throw new Error(`Unexpected IPC ${command}`);
           const request = args.request;

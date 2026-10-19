@@ -211,12 +211,35 @@ try {
       });
       await page.evaluate(() => {
         window.quad9RetentionMarker = "same-document";
+        window.quad9ReadRequests = 0;
+        window.quad9VisibilityReplies = 0;
+        const native = window.__TAURI_INTERNALS__;
+        const original = native.invoke;
+        native.invoke = async (...args) => {
+          if (args[0] === "service_request" &&
+              ["get_status", "list_adapters"].includes(args[1]?.request?.command?.type))
+            window.quad9ReadRequests++;
+          const result = await original.apply(native, args);
+          if (args[0] === "plugin:window|is_visible") window.quad9VisibilityReplies++;
+          return result;
+        };
       });
       await page.keyboard.press("Control+w");
       await delay(300);
       expect(page.isClosed()).toBe(false);
+      await expect.poll(() => isVisible(page)).toBe(false);
+      const hiddenReads = await page.evaluate(async () => {
+        const before = { reads: window.quad9ReadRequests, visibility: window.quad9VisibilityReplies };
+        window.dispatchEvent(new Event("offline"));
+        return before;
+      });
+      await expect.poll(() => page.evaluate(() => window.quad9VisibilityReplies)).toBeGreaterThan(hiddenReads.visibility);
+      await delay(100);
+      expect(await page.evaluate(() => window.quad9ReadRequests)).toBe(hiddenReads.reads);
       await browser.close();
       ({ browser, page } = await reopen(executable, port, child));
+      await expect.poll(() => page.evaluate(() => window.quad9ReadRequests)).toBeGreaterThan(hiddenReads.reads);
+      report.lifecycle.hidden_event_reads_deferred_until_reopen = true;
       // Playwright wrappers change across reconnect; the retained document keeps its runtime marker.
       expect(
         await page.evaluate(() => document.documentElement.dataset.theme),

@@ -39,6 +39,53 @@ const IDLE: u8 = 0;
 const RETAINED: u8 = 1;
 const DESTROYING: u8 = 2;
 
+fn update_memory_target(app: &tauri::AppHandle) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2_19, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW,
+        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL,
+    };
+    use windows_core::Interface;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetAncestor, GetForegroundWindow, GA_ROOT};
+    let Some(webview) = app.get_webview_window("main") else {
+        return;
+    };
+    // Queue from a worker so no WebView callback reenters Tauri's window-event
+    // dispatch. There is no wait, timer, or suspension of frontend scripts.
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = webview.with_webview(move |platform| {
+            // SAFETY: Tauri invokes this closure on the WebView's owning thread.
+            // Both COM handles stay alive for the call. The HWNDs are compared,
+            // never dereferenced. Recheck current foreground ownership here so
+            // a delayed focus event cannot leave an active view in Low mode.
+            let _ = unsafe {
+                let mut parent = Default::default();
+                platform
+                    .controller()
+                    .ParentWindow(&mut parent)
+                    .and_then(|()| {
+                        // Wry can put the controller inside a child container.
+                        // Compare its top-level window with the foreground app.
+                        let root = GetAncestor(parent.0, GA_ROOT);
+                        let foreground = GetForegroundWindow();
+                        let target =
+                            if !root.is_null() && !foreground.is_null() && root != foreground {
+                                COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
+                            } else {
+                                COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL
+                            };
+                        platform
+                            .controller()
+                            .CoreWebView2()
+                            .and_then(|view| view.cast::<ICoreWebView2_19>())
+                            .and_then(|view| view.SetMemoryUsageTargetLevel(target))
+                    })
+            };
+            // Older runtimes may not expose this optional interface. Retain
+            // their default policy if querying or setting the hint fails.
+        });
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -433,6 +480,7 @@ fn show_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         window.show()?;
         window.unminimize()?;
         window.set_focus()?;
+        update_memory_target(app);
         let view = app.state::<Host>().next_view.lock().unwrap().clone();
         app.emit("navigate", view)?;
     } else {
@@ -440,6 +488,7 @@ fn show_window(app: &tauri::AppHandle) -> tauri::Result<()> {
             .retention_sequence
             .store(0, Ordering::Release);
         tauri::WebviewWindowBuilder::from_config(app, &app.config().app.windows[0])?.build()?;
+        update_memory_target(app);
         // The new frontend reads interface_context after mounting.
     }
     Ok(())
@@ -557,9 +606,13 @@ fn main() {
                 })
                 .build(app)?;
             observe_network(app.handle().clone())?;
+            update_memory_target(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Focused(_)) {
+                update_memory_target(window.app_handle());
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 // Keep uncertain mutation receipts and in-flight UI actions alive.
