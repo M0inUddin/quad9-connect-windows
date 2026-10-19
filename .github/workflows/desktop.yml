@@ -57,6 +57,9 @@ jobs:
       - name: Exercise the actual native window and Rust IPC without a service
         working-directory: apps/desktop
         run: node scripts/native-smoke.mjs src-tauri/target/debug/quad9-desktop.exe
+      - name: Validate native accessibility and tray window recreation
+        working-directory: apps/desktop
+        run: node scripts/native-validation.mjs src-tauri/target/debug/quad9-desktop.exe
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: quad9-desktop-windows-development
@@ -67,4 +70,12 @@ jobs:
         with:
           name: desktop-native-screenshot
           path: output/playwright/native-service-unavailable.png
+          retention-days: 7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: desktop-native-accessibility
+          path: |
+            output/playwright/native-validation/*.json
+            output/playwright/native-validation/*.png
           retention-days: 7

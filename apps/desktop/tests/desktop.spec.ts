@@ -257,6 +257,9 @@ for (const failureSource of ["event", "saved"] as const) {
               return args.handler;
             }
             if (command === "plugin:event|unlisten") return null;
+            if (command === "interface_context")
+              return { view: "connection", tray_result: null };
+            if (command === "retain_interface") return null;
             if (command === "network_monitor_error")
               return failureSource === "saved"
                 ? new Promise((resolve) => {
@@ -307,7 +310,8 @@ for (const failureSource of ["event", "saved"] as const) {
         },
         emitNativeTest(event: string, payload: unknown) {
           if (event === "network-monitor-error" && failureSource === "saved") {
-            if (!savedFailure) throw new Error("The startup getter is not pending");
+            if (!savedFailure)
+              throw new Error("The startup getter is not pending");
             savedFailure(payload);
             return;
           }
@@ -318,7 +322,9 @@ for (const failureSource of ["event", "saved"] as const) {
       });
     }, failureSource);
     await page.goto("/");
-    await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Diagnostics", exact: true })
+      .click();
     await page
       .getByRole("button", { name: "Run diagnostics", exact: true })
       .click();
@@ -368,7 +374,9 @@ for (const failureSource of ["event", "saved"] as const) {
     );
     // Tab interactions flush the event's state update before the absence check.
     await page.getByRole("button", { name: "Settings", exact: true }).click();
-    await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Diagnostics", exact: true })
+      .click();
     await expect(
       page.getByText("DNS over HTTPS observed", { exact: true }),
     ).toHaveCount(0);
