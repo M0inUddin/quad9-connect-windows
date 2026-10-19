@@ -10,7 +10,9 @@ The direct check sends HTTPS HEAD requests to the fixed Quad9 primary IPv4
 `dns.quad9.net` for SNI, HTTP authority, and normal certificate validation.
 `WINHTTP_OPTION_RESOLUTION_HOSTNAME` supplies each literal connection address,
 avoiding a system-resolver dependency. An unsupported option produces a failure;
-there is no hostname-resolution fallback. Windows settings remain unchanged.
+there is no hostname-resolution fallback. Global cross-session connection pooling
+is disabled so another session's hostname connection cannot satisfy an address
+family's result. Windows settings remain unchanged.
 
 The requests require HTTP/2 and TLS 1.2 or 1.3. They use no proxy, cookies,
 automatic authentication, request body, client certificate, or automatic
@@ -36,7 +38,9 @@ returns a TLS-validated HTTP/2 response, and one when neither does. This does no
 change the system probe's separate DoH success criterion.
 
 Windows tests use a silent local TCP peer to exercise real asynchronous timeout
-and context cleanup without contacting an external service. Browser regressions
+and context cleanup without contacting an external service. The accepted socket
+explicitly uses blocking reads because Windows can inherit the listener's
+nonblocking mode. Browser regressions
 cover mixed family results, direct failure with system DoH, direct success
 without system DoH, HTTP error visibility, invalidation, accessibility, and an
 older service without the optional result. Live endpoint compatibility still

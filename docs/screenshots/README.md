@@ -32,4 +32,12 @@ This earlier native smoke capture used an absent service. The client displays it
 
 ![One system-resolver diagnostic result](diagnostics-dark.png)
 
+## Browser fixture, independent direct-upstream results
+
+These Edge captures show a direct IPv4 HTTPS response alongside an unverified system resolver and an unreachable IPv6 endpoint. A response status establishes endpoint reachability only. The fixture does not perform network requests or change DNS settings.
+
+![Independent direct HTTPS and system-resolver results in light theme](upstream-diagnostics-light.png)
+
+![Independent direct HTTPS and system-resolver results in dark theme](upstream-diagnostics-dark.png)
+
 To regenerate browser captures, run `npm run build` and `npm run test:e2e` in `apps/desktop`. Run `node scripts/native-validation.mjs <release-desktop.exe> 20 <output-directory>` unelevated for the native captures. Add `--require-service` only when the service is installed, the current token is authorized, and DNS management is off. `native-smoke.mjs` generates the earlier unavailable-service capture when the service is absent. Generated profiles and raw validation output stay under ignored directories. Only selected screenshots and sanitized validation records are tracked.

@@ -216,6 +216,9 @@ mod http {
                 WINHTTP_FLAG_ASYNC,
             )
         })?;
+        // Never reuse another session's connection to this hostname. Each
+        // address-family result must come from its own literal destination.
+        option(&session, WINHTTP_OPTION_DISABLE_GLOBAL_POOLING, &1u32)?;
         option(
             &session,
             WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL,
@@ -453,6 +456,10 @@ mod http {
                         other => panic!("Local fixture did not receive the connection: {other:?}"),
                     }
                 };
+                // Windows can inherit the listener's nonblocking mode. Keep
+                // this accepted peer open until cancellation, including when
+                // WinHTTP has not sent its TLS ClientHello yet.
+                socket.set_nonblocking(false).unwrap();
                 socket
                     .set_read_timeout(Some(Duration::from_secs(3)))
                     .unwrap();
