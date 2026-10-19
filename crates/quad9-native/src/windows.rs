@@ -1,3 +1,4 @@
+use crate::dns_scope::{inactive_discovery_defaults, Ipv6Route};
 use crate::*;
 use std::{ffi::c_void, mem, ptr};
 use windows_sys::{
@@ -52,6 +53,41 @@ fn format_guid(guid: GUID) -> Result<AdapterId, NativeError> {
     .map_err(|e| NativeError::InvalidData(e.to_string()))
 }
 
+fn ipv6_routes() -> Option<Vec<Ipv6Route>> {
+    let mut table = ptr::null_mut();
+    // SAFETY: Windows initializes the owned table pointer on success.
+    let code = unsafe { GetIpForwardTable2(AF_INET6, &mut table) };
+    if code != 0 || table.is_null() {
+        return None;
+    }
+    let result = (|| {
+        // SAFETY: The successful API result owns an initialized table header.
+        let count = unsafe { (*table).NumEntries } as usize;
+        if count > 65_536 {
+            return None;
+        }
+        // SAFETY: Table is a variable-length array with Windows' reported count.
+        let rows = unsafe { std::slice::from_raw_parts((*table).Table.as_ptr(), count) };
+        let mut routes = Vec::with_capacity(count);
+        for row in rows {
+            // SAFETY: Address family selects the initialized IPv6 union member.
+            if unsafe { row.DestinationPrefix.Prefix.si_family } != AF_INET6 {
+                return None;
+            }
+            // SAFETY: The route table was requested for IPv6 and checked above.
+            let bytes = unsafe { row.DestinationPrefix.Prefix.Ipv6.sin6_addr.u.Byte };
+            routes.push(Ipv6Route {
+                prefix: bytes.into(),
+                length: row.DestinationPrefix.PrefixLength,
+            });
+        }
+        Some(routes)
+    })();
+    // SAFETY: Free this API-owned allocation once, after copying every row.
+    unsafe { FreeMibTable(table.cast()) };
+    result
+}
+
 pub fn inspect_adapters() -> Result<Vec<AdapterInspection>, NativeError> {
     // u128 storage guarantees the alignment required by the Windows structures.
     let mut size = 16 * 1024u32;
@@ -89,6 +125,7 @@ pub fn inspect_adapters() -> Result<Vec<AdapterInspection>, NativeError> {
         }
         let mut current = head;
         let mut result = Vec::new();
+        let mut routes = None;
         while !current.is_null() {
             if result.len() >= 512 {
                 return Err(NativeError::InvalidData("Too many adapter records".into()));
@@ -128,6 +165,8 @@ pub fn inspect_adapters() -> Result<Vec<AdapterInspection>, NativeError> {
             };
             let mut has_ipv4_dns = false;
             let mut has_ipv6_dns = false;
+            let mut ipv6_dns = Vec::new();
+            let mut complete_ipv6_dns = true;
             let mut dns = adapter.FirstDnsServerAddress;
             for _ in 0..512 {
                 if dns.is_null() {
@@ -142,8 +181,43 @@ pub fn inspect_adapters() -> Result<Vec<AdapterInspection>, NativeError> {
                     let family = unsafe { (*node.Address.lpSockaddr).sa_family };
                     has_ipv4_dns |= family == AF_INET;
                     has_ipv6_dns |= family == AF_INET6;
+                    if family == AF_INET6
+                        && node.Address.iSockaddrLength < mem::size_of::<SOCKADDR_IN6>() as i32
+                    {
+                        complete_ipv6_dns = false;
+                    }
+                    if family == AF_INET6
+                        && node.Address.iSockaddrLength >= mem::size_of::<SOCKADDR_IN6>() as i32
+                    {
+                        // SAFETY: The family and length establish a complete IPv6 socket.
+                        let bytes = unsafe {
+                            (*node.Address.lpSockaddr.cast::<SOCKADDR_IN6>())
+                                .sin6_addr
+                                .u
+                                .Byte
+                        };
+                        ipv6_dns.push(bytes.into());
+                    }
                 }
                 dns = node.Next;
+            }
+            if !dns.is_null() {
+                return Err(NativeError::InvalidData(
+                    "Too many DNS address records".into(),
+                ));
+            }
+            if has_ipv6_dns
+                && complete_ipv6_dns
+                && inactive_discovery_defaults(&ipv6_dns, true, Some(&[]))
+            {
+                let automatic = crate::dns_backend::implicit_ipv6_discovery(
+                    &id,
+                    adapter.IfType == IF_TYPE_SOFTWARE_LOOPBACK,
+                );
+                let routes = routes.get_or_insert_with(ipv6_routes);
+                if inactive_discovery_defaults(&ipv6_dns, automatic, routes.as_deref()) {
+                    has_ipv6_dns = false;
+                }
             }
             let mut global_v6 = false;
             let mut unicast = adapter.FirstUnicastAddress;

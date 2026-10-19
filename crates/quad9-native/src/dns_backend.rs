@@ -26,6 +26,34 @@ fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(Some(0)).collect()
 }
 
+pub(crate) fn implicit_ipv6_discovery(id: &AdapterId, loopback: bool) -> bool {
+    let path = format!(
+        r"SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\Interfaces\{{{}}}",
+        id.as_str()
+    );
+    if !registry_string(&path, "NameServer")
+        .is_ok_and(|value| value.is_none_or(|s| s.trim().is_empty()))
+    {
+        return false;
+    }
+    match crate::windows::read_dns_family(guid(id), true) {
+        Ok(raw) => {
+            raw.name_servers.is_none_or(|s| s.trim().is_empty())
+                && raw.profile_name_servers.is_none_or(|s| s.trim().is_empty())
+                && raw.server_properties.is_empty()
+                && raw.profile_server_properties.is_empty()
+        }
+        // The software loopback can enumerate discovery defaults despite having
+        // no IPv6 DNS settings object. Static settings were checked above, and
+        // the caller also requires that no route can carry these addresses.
+        Err(NativeError::Windows {
+            code: ERROR_FILE_NOT_FOUND,
+            ..
+        }) if loopback => true,
+        _ => false,
+    }
+}
+
 fn registry_string(path: &str, value: &str) -> Result<Option<String>, CoreError> {
     let path = wide(path);
     let value = wide(value);
