@@ -1,0 +1,17 @@
+[package]
+name = "quad9-desktop"
+version = "0.1.0-dev"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+
+[workspace]
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-single-instance = "2"
+quad9-service = { path = "../../../crates/quad9-service" }
+quad9-core = { path = "../../../crates/quad9-core" }
+serde_json = "1"
+
+[build-dependencies]
+tauri-build = "2"
