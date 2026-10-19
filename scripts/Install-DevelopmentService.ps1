@@ -24,12 +24,9 @@ if (-not (Get-LocalGroupMember -Group $group | Where-Object { $_.SID -eq $operat
 
 $installRoot = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Quad9Connect'
 if (Test-Path -LiteralPath $installRoot) {
-    $owner = (Get-Acl -LiteralPath $installRoot).GetOwner([Security.Principal.SecurityIdentifier]).Value
-    if ($owner -notin @('S-1-5-18', 'S-1-5-32-544')) { throw 'The existing install directory has an untrusted owner.' }
-    if ((Get-Item -LiteralPath $installRoot).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'The install directory must not be a reparse point.' }
-} else {
-    New-Item -ItemType Directory -Path $installRoot | Out-Null
+    throw 'The install directory already exists. Inspect and remove the previous development directory before installing. Existing executables or libraries must never be reused by a LocalSystem service.'
 }
+New-Item -ItemType Directory -Path $installRoot | Out-Null
 $acl = [Security.AccessControl.DirectorySecurity]::new()
 $acl.SetAccessRuleProtection($true, $false)
 $inherit = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'

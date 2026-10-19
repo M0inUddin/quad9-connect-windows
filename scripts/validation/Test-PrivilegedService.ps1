@@ -15,6 +15,18 @@ foreach ($name in @($operator, $outsider)) {
     Add-LocalGroupMember -SID ([Security.Principal.SecurityIdentifier]'S-1-5-32-545') -Member $name
     $credentials[$name] = [PSCredential]::new("$env:COMPUTERNAME\$name", $password)
 }
+$installRoot = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Quad9Connect'
+New-Item -ItemType Directory -Path $installRoot | Out-Null
+$rejectedExistingDirectory = $false
+try {
+    & (Join-Path $PSScriptRoot '..\Install-DevelopmentService.ps1') -BinaryPath $BinaryPath -OperatorAccount "$env:COMPUTERNAME\$operator" -ValidationVm
+} catch {
+    if ($_.Exception.Message -like '*install directory already exists*') { $rejectedExistingDirectory = $true } else { throw }
+}
+if (-not $rejectedExistingDirectory -or (Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue)) { throw 'Installer reused an existing service directory.' }
+$expectedRoot = [IO.Path]::GetFullPath($installRoot)
+if ((Resolve-Path -LiteralPath $installRoot).Path -ne $expectedRoot) { throw 'Unexpected validation directory.' }
+[IO.Directory]::Delete($expectedRoot, $false) # Only the empty fixture created above; never recursive.
 & (Join-Path $PSScriptRoot '..\Install-DevelopmentService.ps1') -BinaryPath $BinaryPath -OperatorAccount "$env:COMPUTERNAME\$operator" -ValidationVm
 $binary = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Quad9Connect\quad9-service.exe'
 $shared = Join-Path ([Environment]::GetFolderPath('CommonDocuments')) ('Quad9Validation-' + $suffix)

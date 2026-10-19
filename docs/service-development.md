@@ -10,7 +10,7 @@ cargo build --locked -p quad9-service
 ./scripts/Install-DevelopmentService.ps1 -BinaryPath ./target/debug/quad9-service.exe -OperatorAccount "$env:COMPUTERNAME\YourUser"
 ```
 
-The script copies the binary into protected Program Files storage and starts the automatic LocalSystem `Quad9Connect` service. It creates `Quad9ConnectOperators` and enrolls the selected local user. Sign in again after enrollment so the token contains the new group. Installation leaves DNS off. The script refuses to replace an existing service.
+The script copies the binary into protected Program Files storage and starts the automatic LocalSystem `Quad9Connect` service. It creates `Quad9ConnectOperators` and enrolls the selected local user. Sign in again after enrollment so the token contains the new group. Installation leaves DNS off. The script refuses an existing service or install directory so it cannot reuse planted executables or libraries. For a repeat development install, inspect and remove the prior Program Files directory after successful service removal. Keep the separate ProgramData recovery records.
 
 The service uses the Windows known ProgramData folder for `Quad9Connect`, with protected administrator/SYSTEM access. Its recovery journal, request receipts, and lock remain outside the checkout. A preexisting directory or file with unsafe permissions causes startup to fail. Do not delete recovery files to dismiss an error.
 
