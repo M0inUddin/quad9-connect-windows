@@ -39,6 +39,10 @@ try {
         $manifest.files = @($files[0]) + @($files[0]) + @($files[2..4])
         Must-Fail { Assert-Manifest $manifest $Fixture }
         $manifest.files = $files
+        $fresh = New-InstallationState $manifest $null $null
+        if (@($fresh.versions).Count -ne 1 -or $null -eq $fresh.versions[0]) { throw 'Fresh inventory contains a null payload.' }
+        $repeat = New-InstallationState $manifest $fresh $null
+        if (@($repeat.versions).Count -ne 1) { throw 'Repeated installation duplicated the payload.' }
 
         # The offline restore must succeed before SCM deletion or payload removal.
         $script:Events = [Collections.Generic.List[string]]::new()

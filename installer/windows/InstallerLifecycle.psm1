@@ -280,6 +280,14 @@ function Test-WebView2 {
     throw 'Install the Microsoft Edge WebView2 Evergreen Runtime for all users, then run this installer again: https://developer.microsoft.com/microsoft-edge/webview2/'
 }
 
+function New-InstallationState([object] $Manifest, [object] $State, [object] $Enrollment) {
+    # Do not assign an empty array from an if-expression's output: PowerShell
+    # collapses it to null, which would insert a null version in the inventory.
+    $versions = @()
+    if ($State) { $versions = @($State.versions | Where-Object { $_.id -cne $Manifest.id }) }
+    return [pscustomobject]@{ schema = 1; installed = $true; current = $Manifest.id; versions = @($versions) + $Manifest; enrollment = $Enrollment }
+}
+
 function Install-Quad9Payload([string] $Payload, [string] $OperatorSid, [object] $State) {
     Test-WebView2
     $manifestPath = Join-Path $Payload 'payload.json'
@@ -327,8 +335,7 @@ function Install-Quad9Payload([string] $Payload, [string] $OperatorSid, [object]
         if (-not $previous) { Add-Enrollment $enrollment }
         Set-ServiceVersion $manifest
         Start-InstalledService $manifest
-        $versions = if ($State) { @($State.versions | Where-Object { $_.id -cne $manifest.id }) } else { @() }
-        $next = [pscustomobject]@{ schema = 1; installed = $true; current = $manifest.id; versions = @($versions) + $manifest; enrollment = $enrollment }
+        $next = New-InstallationState $manifest $State $enrollment
         Write-AtomicJson 'installation.json' $next
         Publish-Installation $next
         Clear-MaintenanceGate
