@@ -33,6 +33,8 @@ The browser preview is a development-only fixture and carries a visible label. I
 
 Tests cover status precedence, corrupt preferences, explicit selection, enable/restore, diagnostic scope, unavailable service, recovery, theme persistence, keyboard navigation, high contrast, reduced motion, and narrow layouts. Screenshots of the running browser interface are generated under the ignored `output/playwright/` directory. Set `PLAYWRIGHT_CHANNEL=msedge` to use an existing Edge installation locally.
 
+`node scripts/native-smoke.mjs src-tauri/target/debug/quad9-desktop.exe` starts the actual packaged Windows app with an isolated WebView2 profile and a temporary local debugging port. It checks embedded assets, real Tauri-to-Rust IPC, the unavailable-service path, disabled Enable, theme selection, and a native screenshot. It expects the service to be absent and changes no DNS settings. The helper terminates only its own app process. Its profile and generated screenshot remain under ignored validation output.
+
 ## Current limits
 
 The interface deliberately says "Quad9 configured" for matching saved settings. A separate result describes one system-resolver lookup, with its time and duration. It does not claim every application uses encrypted DNS. Successful results are cleared when the window regains focus; native network-event invalidation and full Windows 11 validation remain release work.

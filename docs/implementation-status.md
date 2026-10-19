@@ -24,6 +24,8 @@ The `Native DNS contract in disposable VMs` workflow uses fresh Windows Server 2
 
 Desktop validation includes eight state/preference tests and nine browser interaction tests. The browser cases cover the enable/restore flow, retry identity after a lost response, service loss, recovery, themes, keyboard access, high contrast, reduced motion, and narrow layout. A production browser check confirms preview fixtures cannot activate. [Screenshots](screenshots/README.md) show the running browser UI with labeled sample data. They do not demonstrate native tray or Windows 11 behavior. CI separately builds the native Windows host with MSVC.
 
+The actual packaged client also passed a startup/IPC smoke check on Windows build 10.0.26300.0 with the service absent. It loads embedded assets, reaches the Rust pipe client, reports service unavailability, disables Enable, changes its theme, and produces a native WebView screenshot. This changes no host DNS settings and does not establish tray lifecycle or Windows 11 service write/restore support.
+
 Server results are API development evidence. They do not establish Windows 11 support. No service or DNS mutation is installed or run on the developer's host by these checks. Interrupted transaction decisions are covered by deterministic tests; full Windows crash/power-loss and filesystem durability scenarios still require dedicated testing.
 
 ## Remaining release work
@@ -34,4 +36,3 @@ Server results are API development evidence. They do not establish Windows 11 su
 4. Add direct upstream diagnostics and bounded operational logging for startup failures.
 5. Implement NSIS installation, signed distribution, service replacement, upgrade recovery, and uninstall lifecycle tests.
 6. Complete accessibility, resource, sleep/wake, VPN interference, and specification acceptance measurements.
-

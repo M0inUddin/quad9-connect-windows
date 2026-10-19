@@ -1,6 +1,12 @@
 # Desktop UI screenshots
 
-These screenshots come from the running React interface in a local Edge browser at 480 logical pixels wide. Playwright captures settled states after the corresponding interaction. The preview uses sample adapter/service data, displays a visible preview label, and does not change DNS. The production Tauri app uses the real service; browser preview fixtures cannot activate in a production build.
+The first capture shows the actual packaged Tauri app using real Rust IPC on Windows build 10.0.26300.0. The remaining captures show the running React interface in a local Edge browser at 480 logical pixels wide. Playwright captures settled states after the corresponding interaction. Browser previews use sample adapter/service data, display a visible preview label, and do not change DNS. The production Tauri app uses the real service; browser preview fixtures cannot activate in a production build.
+
+## Native Windows client, service absent
+
+The service is deliberately absent on this host. The client displays its actual unavailable state, prevents Enable, and offers reconnect. This checks native startup and IPC without installing the privileged service or changing host DNS.
+
+![Actual Tauri client with unavailable service](native-service-unavailable.png)
 
 ## Connection, light theme
 
