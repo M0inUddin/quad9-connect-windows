@@ -211,34 +211,46 @@ try {
       });
       await page.evaluate(() => {
         window.quad9RetentionMarker = "same-document";
-        window.quad9ReadRequests = 0;
-        window.quad9VisibilityReplies = 0;
-        const native = window.__TAURI_INTERNALS__;
-        const original = native.invoke;
-        native.invoke = async (...args) => {
-          if (args[0] === "service_request" &&
-              ["get_status", "list_adapters"].includes(args[1]?.request?.command?.type))
-            window.quad9ReadRequests++;
-          const result = await original.apply(native, args);
-          if (args[0] === "plugin:window|is_visible") window.quad9VisibilityReplies++;
-          return result;
-        };
       });
+      // Observe Windows Tauri's fetch IPC through CDP. Its invoke property is
+      // read-only. Never replace the bridge or collect its authentication headers.
+      let readRequests = 0;
+      let visibilityReplies = 0;
+      const ipcCommand = (request) => {
+        const url = new URL(request.url());
+        return url.hostname === "ipc.localhost" ? decodeURIComponent(url.pathname.slice(1)) : null;
+      };
+      page.on("request", (request) => {
+        if (ipcCommand(request) === "service_request" &&
+            ["get_status", "list_adapters"].includes(request.postDataJSON()?.request?.command?.type))
+          readRequests++;
+      });
+      page.on("requestfinished", (request) => {
+        if (ipcCommand(request) === "plugin:window|is_visible") visibilityReplies++;
+      });
+      // Positive controls prevent an unavailable IPC observation path from
+      // making the later zero-read assertion pass without observing anything.
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      await expect.poll(() => readRequests).toBeGreaterThan(0);
+      await expect.poll(() => visibilityReplies).toBeGreaterThan(0);
       await page.keyboard.press("Control+w");
       await delay(300);
       expect(page.isClosed()).toBe(false);
       await expect.poll(() => isVisible(page)).toBe(false);
-      const hiddenReads = await page.evaluate(async () => {
-        const before = { reads: window.quad9ReadRequests, visibility: window.quad9VisibilityReplies };
-        window.dispatchEvent(new Event("offline"));
-        return before;
-      });
-      await expect.poll(() => page.evaluate(() => window.quad9VisibilityReplies)).toBeGreaterThan(hiddenReads.visibility);
+      const hiddenReads = { reads: readRequests, visibility: visibilityReplies };
+      await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+      await expect.poll(() => visibilityReplies).toBeGreaterThan(hiddenReads.visibility);
       await delay(100);
-      expect(await page.evaluate(() => window.quad9ReadRequests)).toBe(hiddenReads.reads);
-      await browser.close();
-      ({ browser, page } = await reopen(executable, port, child));
-      await expect.poll(() => page.evaluate(() => window.quad9ReadRequests)).toBeGreaterThan(hiddenReads.reads);
+      expect(readRequests).toBe(hiddenReads.reads);
+      const observedBrowser = browser;
+      try {
+        // Keep the observer connected across Open, which can refresh before a
+        // second CDP connection attaches to the retained document.
+        ({ browser, page } = await reopen(executable, port, child));
+        await expect.poll(() => readRequests).toBeGreaterThan(hiddenReads.reads);
+      } finally {
+        await observedBrowser.close().catch(() => {});
+      }
       report.lifecycle.hidden_event_reads_deferred_until_reopen = true;
       // Playwright wrappers change across reconnect; the retained document keeps its runtime marker.
       expect(
