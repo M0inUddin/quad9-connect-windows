@@ -30,6 +30,10 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --locked
       - run: cargo run --locked -p quad9-cli -- --help
+      - name: Validate host recovery ownership without DNS mutations
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/validation/Test-HostValidationHelpers.ps1
       - name: Inspect Windows adapters without changing DNS
         if: runner.os == 'Windows'
         shell: pwsh

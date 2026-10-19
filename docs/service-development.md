@@ -2,6 +2,12 @@
 
 Use disposable Windows VMs with snapshots for development service installation and DNS mutations. The intended support platform is Windows 11 x64; hosted Windows Server CI provides additional API evidence.
 
+An explicitly authorized Windows 11 host run can use `scripts/validation/Test-Windows11Host.ps1`. It requires an administrator shell, an explicit physical adapter GUID, the production service and inspection binaries, the chosen operator SID, and a fresh `ProgramData\Quad9ConnectHostValidation-<32 hex digits>` directory. It refuses existing installations, recovery data, managed DNS policy, and uncovered resolver scopes. It uses production adapter checks without the VM bypass.
+
+Before any DNS write, the runner saves the native baseline in the protected run directory and registers a SYSTEM recovery task for three minutes later and the next Windows startup. The task can stop the specific test process if it has exceeded its deadline. Recovery writes only settings that still exactly match the test profile; it preserves external changes and retains the service and journal when recovery cannot finish. A successful run removes its task and temporary service, reverses only its new operator enrollment, and archives recovery records in the protected run directory. It tests the original-to-strict-profile roundtrip, service restart while active, exact restoration, and historical retries after restart. It does not create test accounts or alter policy. The existing disposable-VM fixtures cover additional static-DNS cases.
+
+Run `scripts/validation/Test-HostValidationHelpers.ps1` without elevation to test recovery decisions with synthetic state. Host-specific results identify tested address families and remaining compatibility gaps. Authorization for one host test does not make these scripts an automatic installation or startup action.
+
 ## Build and install
 
 ```powershell
