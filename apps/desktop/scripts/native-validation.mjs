@@ -1,4 +1,4 @@
-import { freePort, connect, reopen, closeWindow } from "./native-session.mjs";
+import { freePort, connect, reopen, closeWindow, memoryTarget } from "./native-session.mjs";
 // Real embedded assets, Rust IPC, and native close/reopen. Never sends a DNS mutation.
 import { expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
@@ -237,6 +237,12 @@ try {
       await delay(300);
       expect(page.isClosed()).toBe(false);
       await expect.poll(() => isVisible(page)).toBe(false);
+      // Current Evergreen runtimes expose the hint. Assert the actual COM
+      // property, since working-set reduction itself is only best effort.
+      expect(await memoryTarget(page)).not.toBe(null);
+      await expect.poll(async () => (await memoryTarget(page))?.level).toBe(1);
+      expect((await memoryTarget(page)).visible).toBe(false);
+      report.lifecycle.hidden_memory_target_low = true;
       const hiddenReads = { reads: readRequests, visibility: visibilityReplies };
       await page.evaluate(() => window.dispatchEvent(new Event("offline")));
       await expect.poll(() => visibilityReplies).toBeGreaterThan(hiddenReads.visibility);
@@ -252,6 +258,13 @@ try {
         await observedBrowser.close().catch(() => {});
       }
       report.lifecycle.hidden_event_reads_deferred_until_reopen = true;
+      await expect.poll(async () => {
+        const target = await memoryTarget(page);
+        return target && (!target.foreground || target.level === 0);
+      }).toBe(true);
+      const reopenedMemory = await memoryTarget(page);
+      report.lifecycle.foreground_memory_target_normal = reopenedMemory.foreground
+        ? reopenedMemory.level === 0 : null;
       // Playwright wrappers change across reconnect; the retained document keeps its runtime marker.
       expect(
         await page.evaluate(() => document.documentElement.dataset.theme),

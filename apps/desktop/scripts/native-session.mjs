@@ -74,3 +74,8 @@ export async function closeWindow(page) {
   });
   await closed;
 }
+
+export const memoryTarget = (page) =>
+  page.evaluate(() =>
+    window.__TAURI_INTERNALS__.invoke("interface_memory_target"),
+  );

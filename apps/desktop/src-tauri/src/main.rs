@@ -45,7 +45,9 @@ fn update_memory_target(app: &tauri::AppHandle) {
         COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL,
     };
     use windows_core::Interface;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GetAncestor, GetForegroundWindow, GA_ROOT};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetAncestor, GetForegroundWindow, IsIconic, IsWindowVisible, GA_ROOT,
+    };
     let Some(webview) = app.get_webview_window("main") else {
         return;
     };
@@ -67,12 +69,15 @@ fn update_memory_target(app: &tauri::AppHandle) {
                         // Compare its top-level window with the foreground app.
                         let root = GetAncestor(parent.0, GA_ROOT);
                         let foreground = GetForegroundWindow();
-                        let target =
-                            if !root.is_null() && !foreground.is_null() && root != foreground {
-                                COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
-                            } else {
-                                COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL
-                            };
+                        let inactive = !root.is_null()
+                            && (IsWindowVisible(root) == 0
+                                || IsIconic(root) != 0
+                                || (!foreground.is_null() && root != foreground));
+                        let target = if inactive {
+                            COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
+                        } else {
+                            COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL
+                        };
                         platform
                             .controller()
                             .CoreWebView2()
@@ -84,6 +89,61 @@ fn update_memory_target(app: &tauri::AppHandle) {
             // their default policy if querying or setting the hint fails.
         });
     });
+}
+
+#[derive(serde::Serialize)]
+struct InterfaceMemoryTarget {
+    level: i32,
+    visible: bool,
+    foreground: bool,
+}
+
+// Read the actual optional hint separately from its best-effort RSS effects.
+#[tauri::command]
+async fn interface_memory_target(
+    window: tauri::WebviewWindow,
+) -> Result<Option<InterfaceMemoryTarget>, String> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2_19, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL,
+    };
+    use windows_core::Interface;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetAncestor, GetForegroundWindow, IsWindowVisible, GA_ROOT,
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let (send, receive) = std::sync::mpsc::sync_channel(1);
+        window
+            .with_webview(move |platform| {
+                // SAFETY: COM calls run on the WebView's owning thread while its
+                // controller is alive. HWNDs are only queried and compared.
+                let result = unsafe {
+                    (|| -> windows_core::Result<InterfaceMemoryTarget> {
+                        let view = platform
+                            .controller()
+                            .CoreWebView2()?
+                            .cast::<ICoreWebView2_19>()?;
+                        let mut level = COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL;
+                        view.MemoryUsageTargetLevel(&mut level)?;
+                        let mut parent = Default::default();
+                        platform.controller().ParentWindow(&mut parent)?;
+                        let root = GetAncestor(parent.0, GA_ROOT);
+                        Ok(InterfaceMemoryTarget {
+                            level: level.0,
+                            visible: IsWindowVisible(root) != 0,
+                            foreground: !root.is_null() && root == GetForegroundWindow(),
+                        })
+                    })()
+                };
+                // Older runtimes can lack this interface; their policy is unchanged.
+                let _ = send.send(result.ok());
+            })
+            .map_err(|error| error.to_string())?;
+        receive
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[cfg(test)]
@@ -442,6 +502,8 @@ fn hide_interface(window: tauri::Window) {
                 return Ok(());
             }
             window.hide().map_err(|e| e.to_string())?;
+            // Hiding an already unfocused window need not emit Focused(false).
+            update_memory_target(&app);
             destroy_window(&app, &window)?;
             Ok(())
         })();
@@ -488,7 +550,6 @@ fn show_window(app: &tauri::AppHandle) -> tauri::Result<()> {
             .retention_sequence
             .store(0, Ordering::Release);
         tauri::WebviewWindowBuilder::from_config(app, &app.config().app.windows[0])?.build()?;
-        update_memory_target(app);
         // The new frontend reads interface_context after mounting.
     }
     Ok(())
@@ -502,6 +563,7 @@ fn main() {
             service_request,
             network_monitor_error,
             interface_context,
+            interface_memory_target,
             retain_interface
         ])
         .setup(|app| {
@@ -606,7 +668,6 @@ fn main() {
                 })
                 .build(app)?;
             observe_network(app.handle().clone())?;
-            update_memory_target(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {

@@ -6,7 +6,13 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { freePort, connect, closeWindow, reopen } from "./native-session.mjs";
+import {
+  freePort,
+  connect,
+  closeWindow,
+  reopen,
+  memoryTarget,
+} from "./native-session.mjs";
 
 if (process.platform !== "win32" || !process.argv[2])
   throw new Error("Pass a release Windows desktop executable.");
@@ -30,6 +36,7 @@ const summary = {
     .update(await readFile(executable))
     .digest("hex"),
   reports: {},
+  memory_targets: {},
   method:
     "Isolated app profile; recursive process attribution; debugging listener enabled for native close control, with no CDP client connected during counter sampling. No axe or screen reader is active. Windows settings are unchanged.",
 };
@@ -105,6 +112,7 @@ try {
   await browser.close();
   initial = await reopen(executable, port, child);
   browser = initial.browser;
+  summary.memory_targets.window = await memoryTarget(initial.page);
   await browser.close();
   browser = undefined;
   await sample("window");
@@ -127,12 +135,25 @@ try {
     )
     .toBe(false);
   expect(session.page.isClosed()).toBe(false);
+  expect(await memoryTarget(session.page)).not.toBe(null);
+  await expect
+    .poll(async () => (await memoryTarget(session.page))?.level)
+    .toBe(1);
+  summary.memory_targets.hidden = await memoryTarget(session.page);
+  expect(summary.memory_targets.hidden.visible).toBe(false);
   await browser.close();
   browser = undefined;
   await sample("window", "powershell.exe", shortRun, "retained-hidden");
   if (verifyPwsh) await sample("window", "pwsh.exe", true, "retained-hidden");
   session = await reopen(executable, port, child);
   browser = session.browser;
+  await expect
+    .poll(async () => {
+      const target = await memoryTarget(session.page);
+      return target && (!target.foreground || target.level === 0);
+    })
+    .toBe(true);
+  summary.memory_targets.reopened = await memoryTarget(session.page);
   await session.page
     .getByRole("button", { name: "Settings", exact: true })
     .click();
