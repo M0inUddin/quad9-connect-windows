@@ -37,6 +37,43 @@ static NEXT: AtomicU64 = AtomicU64::new(0);
 const IDLE: u8 = 0;
 const RETAINED: u8 = 1;
 const DESTROYING: u8 = 2;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_diagnostic_keeps_a_mounting_document_alive() {
+        let pending = AtomicBool::new(true);
+        let retention = AtomicU8::new(IDLE);
+        assert!(reserve_pending_diagnostic(&pending, &retention));
+        assert_eq!(retention.load(Ordering::Acquire), RETAINED);
+        assert!(!pending.load(Ordering::Acquire));
+        assert!(retention
+            .compare_exchange(IDLE, DESTROYING, Ordering::AcqRel, Ordering::Acquire)
+            .is_err());
+    }
+
+    #[test]
+    fn closing_document_leaves_diagnostic_for_its_replacement() {
+        let pending = AtomicBool::new(true);
+        let retention = AtomicU8::new(DESTROYING);
+        assert!(!reserve_pending_diagnostic(&pending, &retention));
+        assert!(pending.load(Ordering::Acquire));
+        assert_eq!(retention.load(Ordering::Acquire), DESTROYING);
+        retention.store(IDLE, Ordering::Release);
+        assert!(reserve_pending_diagnostic(&pending, &retention));
+        assert_eq!(retention.load(Ordering::Acquire), RETAINED);
+    }
+
+    #[test]
+    fn navigation_without_a_diagnostic_does_not_retain_the_window() {
+        let pending = AtomicBool::new(false);
+        let retention = AtomicU8::new(IDLE);
+        assert!(!reserve_pending_diagnostic(&pending, &retention));
+        assert_eq!(retention.load(Ordering::Acquire), IDLE);
+    }
+}
 fn request(command: Command) -> Request {
     let time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -205,16 +242,34 @@ struct InterfaceContext {
 }
 
 #[tauri::command]
-fn interface_context(app: tauri::AppHandle) -> InterfaceContext {
+fn interface_context(app: tauri::AppHandle, window: tauri::Window) -> InterfaceContext {
     let host = app.state::<Host>();
     let view = host.next_view.lock().unwrap().clone();
     let tray_result = host.tray_result.lock().unwrap().take();
-    let diagnostic_pending = host.diagnostic_pending.swap(false, Ordering::AcqRel);
+    // A startup status read may still be pending when the user closes. Keep
+    // that document alive before acknowledging its queued diagnostic.
+    let diagnostic_pending = is_current_window(&app, &window)
+        && reserve_pending_diagnostic(&host.diagnostic_pending, &host.retention);
     InterfaceContext {
         view,
         diagnostic_pending,
         tray_result,
     }
+}
+
+fn reserve_pending_diagnostic(pending: &AtomicBool, retention: &AtomicU8) -> bool {
+    if !pending.load(Ordering::Acquire) {
+        return false;
+    }
+    if retention
+        .try_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+            (current != DESTROYING).then_some(RETAINED)
+        })
+        .is_err()
+    {
+        return false;
+    }
+    pending.swap(false, Ordering::AcqRel)
 }
 
 #[tauri::command]
