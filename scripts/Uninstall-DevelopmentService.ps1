@@ -6,6 +6,9 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+# A child Windows PowerShell process can inherit PowerShell 7's module path.
+# Use this edition's built-in modules for elevated recovery commands.
+$env:PSModulePath = Join-Path $PSHOME 'Modules'
 $installRoot = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Quad9Connect'
 $binary = Join-Path $installRoot 'quad9-service.exe'
 $lifecycle = Import-Module (Join-Path $PSScriptRoot '..\installer\windows\InstallerLifecycle.psm1') -PassThru -Force
