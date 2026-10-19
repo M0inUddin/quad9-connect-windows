@@ -161,16 +161,14 @@ foreach ($family in $baseline.families) {
 }
 $removal = Join-Path $PSScriptRoot '..\Uninstall-DevelopmentService.ps1'
 $expectedHash = (Get-FileHash -LiteralPath $binary).Hash
-# Drop unreferenced controllers from the earlier test checks before deliberately
-# retaining one real SCM handle across deletion.
-[GC]::Collect()
-[GC]::WaitForPendingFinalizers()
 $heldService = Get-Service Quad9Connect
-$null = $heldService.ServiceHandle
+# ServiceHandle returns a separately owned SafeHandle. Disposing the controller
+# does not close it; retain and release that exact handle deterministically.
+$heldHandle = $heldService.ServiceHandle
 try {
     $attempt = Invoke-RemovalValidation @('-RemovalTimeoutSeconds', '0')
     if ($attempt.exit_code -eq 0 -or $attempt.error_text -notlike '*deletion did not finish*' -or -not (Test-Path -LiteralPath $binary) -or -not (Test-Path -LiteralPath $logPath)) { throw "Pending SCM deletion must retain recovery binaries and logs: $($attempt.error_text)" }
-} finally { $heldService.Dispose() }
+} finally { $heldHandle.Dispose(); $heldService.Dispose() }
 $attempt = Invoke-RemovalValidation @('-FinishPendingRemoval', '-ExpectedBinarySha256', ('0' * 64))
 if ($attempt.exit_code -eq 0 -or $attempt.error_text -notlike '*binary changed*' -or -not (Test-Path -LiteralPath $binary)) { throw "Deferred cleanup did not reject the wrong binary hash: $($attempt.error_text)" }
 $attempt = Invoke-RemovalValidation @('-FinishPendingRemoval', '-ExpectedBinarySha256', $expectedHash)
