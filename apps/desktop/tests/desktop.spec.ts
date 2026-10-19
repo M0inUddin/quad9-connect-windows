@@ -135,6 +135,99 @@ test("diagnostics cannot replay or consume an uncertain DNS mutation", async ({
   expect(mutations[0]).toEqual(mutations[1]);
 });
 
+test("an event during the final mutation refresh queues a current state read", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    let changed = false;
+    window.addEventListener("quad9-preview-request", (event) => {
+      const command = (event as CustomEvent<Request>).detail.command.type;
+      if (command === "enable_quad9" || command === "restore_previous_settings")
+        changed = true;
+      else if (command === "get_status" && changed) {
+        changed = false;
+        setTimeout(() => window.dispatchEvent(new Event("online")), 50);
+      }
+    });
+  });
+  await page.goto("/?preview=off");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("checkbox", { name: "IPv4", exact: true }).check();
+  await page.getByRole("button", { name: "Connection", exact: true }).click();
+  await page.getByRole("button", { name: "Enable Quad9", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Quad9 configured" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Turn off and restore DNS", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Ready when you are" }),
+  ).toBeVisible();
+});
+
+test("network events clear an old diagnostic without rewriting DNS", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const calls: unknown[] = [];
+    Object.assign(window, { previewCalls: calls });
+    window.addEventListener("quad9-preview-request", (event) =>
+      calls.push((event as CustomEvent).detail),
+    );
+  });
+  await page.goto("/?preview=configured");
+  await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Run diagnostics", exact: true })
+    .click();
+  await expect(
+    page.getByText("DNS over HTTPS observed", { exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.getByText("Ready to check", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("DNS over HTTPS observed", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Run diagnostics", exact: true }),
+  ).toBeEnabled();
+  const calls: Request[] = await page.evaluate(
+    () => (window as unknown as { previewCalls: Request[] }).previewCalls,
+  );
+  expect(
+    calls.filter((c) =>
+      ["enable_quad9", "restore_previous_settings"].includes(c.command.type),
+    ),
+  ).toHaveLength(0);
+});
+
+test("a diagnostic completing after a network change stays invalidated", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.addEventListener("quad9-preview-request", (event) => {
+      if (
+        (event as CustomEvent<Request>).detail.command.type ===
+        "run_diagnostics"
+      )
+        setTimeout(() => window.dispatchEvent(new Event("offline")), 100);
+    });
+  });
+  await page.goto("/?preview=slow-probe");
+  await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Run diagnostics", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Run diagnostics", exact: true }),
+  ).toBeEnabled();
+  await expect(page.getByText("Ready to check", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("DNS over HTTPS observed", { exact: true }),
+  ).toHaveCount(0);
+});
+
 test("production browser content cannot activate sample service data", async ({
   page,
 }) => {
