@@ -1,0 +1,33 @@
+[workspace]
+members = ["crates/quad9-core", "crates/quad9-native", "crates/quad9-cli"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0-dev"
+edition = "2021"
+rust-version = "1.99"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/M0inUddin/quad9-connect-windows"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+windows-sys = { version = "0.61.2", features = [
+  "Win32_Foundation",
+  "Win32_NetworkManagement_Dns",
+  "Win32_NetworkManagement_IpHelper",
+  "Win32_NetworkManagement_Ndis",
+  "Win32_Networking_WinSock",
+] }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
