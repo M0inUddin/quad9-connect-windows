@@ -160,9 +160,17 @@ try {
     # An external edit blocks uninstall and must remain untouched.
     [Quad9Validation.DnsApi]::Write([guid]$baseline.adapter_id, $false, '149.112.112.112,9.9.9.9', @())
     $uninstaller = Join-Path (Current-Directory) 'Uninstall.exe'
-    Run-Setup $uninstaller '/S' 1
+    # NSIS's self-copying bootstrap returns zero even when its child aborts.
+    # Wait for its descendants, then inspect the actual retained state.
+    Run-Setup $uninstaller '/S'
     if ((Get-Service Quad9Connect).Status -ne 'Running' -or -not (Test-Path -LiteralPath (Join-Path $data 'dns.journal.json'))) { throw 'Blocked uninstall removed its recovery mechanism.' }
     if ([Quad9Validation.DnsApi]::Read([guid]$baseline.adapter_id, $false).NameServer -ne '149.112.112.112,9.9.9.9') { throw 'Uninstall overwrote an external edit.' }
+    # QuietUninstallString is the synchronous, elevated management entry point.
+    # Its exit code must report the same blocked removal accurately.
+    $quiet = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Quad9Connect').QuietUninstallString
+    if ($quiet -notlike '*Manage-Quad9Installation.ps1* -Operation Uninstall') { throw 'Quiet uninstall does not use the synchronous lifecycle command.' }
+    & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path (Current-Directory) 'Manage-Quad9Installation.ps1') -Operation Uninstall
+    if ($LASTEXITCODE -ne 1 -or (Get-Service Quad9Connect).Status -ne 'Running') { throw 'Quiet uninstall did not report incomplete recovery and retain the service.' }
     # The administrator explicitly resolves the conflict to the saved baseline.
     Restore-ValidationBaseline $baseline
     & $powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path (Current-Directory) 'Manage-Quad9Installation.ps1') -Operation Repair

@@ -220,7 +220,10 @@ function Publish-Installation([object] $State) {
         DisplayName = 'Quad9 Connect (unsigned development build)'; DisplayVersion = $manifest.version
         Publisher = 'Quad9 Connect community contributors'; InstallLocation = $script:Root
         UninstallString = ('"{0}"' -f (Join-Path $directory 'Uninstall.exe'))
-        QuietUninstallString = ('"{0}" /S' -f (Join-Path $directory 'Uninstall.exe'))
+        # NSIS's self-copying uninstaller bootstrap does not propagate the child
+        # exit code. Management tools need the synchronous administrator command.
+        QuietUninstallString = ('"{0}" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{1}" -Operation Uninstall' -f
+            (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'), (Join-Path $directory 'Manage-Quad9Installation.ps1'))
     }
     foreach ($name in $properties.Keys) { New-ItemProperty -Path $script:Arp -Name $name -Value $properties[$name] -PropertyType String -Force | Out-Null }
     foreach ($name in @('NoModify', 'NoRepair')) { New-ItemProperty -Path $script:Arp -Name $name -Value 1 -PropertyType DWord -Force | Out-Null }
