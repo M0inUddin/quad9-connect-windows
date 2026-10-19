@@ -4,6 +4,7 @@ import type { Request, Result } from "../src/protocol";
 type BridgeWindow = Window & {
   trayQueueTest: {
     calls: string[];
+    contextReads: string[];
     diagnostics: number;
     listenersWaiting: number;
     releaseListeners?: () => void;
@@ -23,6 +24,7 @@ test("tray diagnostics survive startup navigation and coalesce behind a busy act
     const listeners = new Map<string, Set<number>>();
     const bridge: BridgeWindow["trayQueueTest"] = {
       calls: [],
+      contextReads: [],
       diagnostics: 0,
       listenersWaiting: 0,
       emit(event, payload) {
@@ -48,7 +50,7 @@ test("tray diagnostics survive startup navigation and coalesce behind a busy act
         },
         async invoke(
           command: string,
-          args: { event?: string; handler?: number; request?: Request } = {},
+          args: { event?: string; handler?: number; request?: Request; newDocument?: boolean } = {},
         ) {
           if (command === "plugin:event|listen") {
             bridge.listenersWaiting++;
@@ -56,6 +58,12 @@ test("tray diagnostics survive startup navigation and coalesce behind a busy act
             if (!listeners.has(args.event!))
               listeners.set(args.event!, new Set());
             listeners.get(args.event!)!.add(args.handler!);
+            // Exercise a callback after registration but before the initial
+            // document handshake resumes. It must not consume native work yet.
+            if (args.event === "tray-result") {
+              bridge.emit("navigate", "diagnostics");
+              bridge.emit("navigate", "settings");
+            }
             return args.handler;
           }
           if (
@@ -65,6 +73,7 @@ test("tray diagnostics survive startup navigation and coalesce behind a busy act
           )
             return null;
           if (command === "interface_context") {
+            bridge.contextReads.push(args.newDocument ? "mount" : "navigation");
             const diagnostic_pending = diagnosticPending;
             diagnosticPending = false;
             return { view: "settings", diagnostic_pending, tray_result: null };
@@ -127,6 +136,7 @@ test("tray diagnostics survive startup navigation and coalesce behind a busy act
     (window as BridgeWindow).trayQueueTest.releaseListeners!();
   });
   await expect.poll(() => page.evaluate(() => (window as BridgeWindow).trayQueueTest.calls.includes("get_status"))).toBe(true);
+  expect(await page.evaluate(() => (window as BridgeWindow).trayQueueTest.contextReads[0])).toBe("mount");
   await expect
     .poll(() =>
       page.evaluate(

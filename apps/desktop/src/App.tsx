@@ -110,6 +110,8 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   const retentionSequence = useRef(0);
   const documentId = useRef<number | null>(null);
   const nativeListenersReady = useRef<Promise<void>>(Promise.resolve());
+  const handshakeReady = useRef(false);
+  const navigationPending = useRef(false);
   const retry = useRef<Request | null>(null);
   const observationEpoch = useRef(0);
   const nativeGeneration = useRef(0);
@@ -183,9 +185,16 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   }, [prefs]);
   useEffect(() => {
     if (!isTauri()) return;
+    handshakeReady.current = false;
     const unlisten = listen<string>("navigate", (event) => {
       if (["connection", "diagnostics", "settings"].includes(event.payload)) {
         setView(event.payload as View);
+        // The initial new-document handshake resets the previous document's
+        // reservation. Leave native pending work untouched until that reset.
+        if (!handshakeReady.current) {
+          navigationPending.current = true;
+          return;
+        }
         // Consume the saved tray receipt in an existing window too, so it
         // cannot reappear as a stale error after a later window recreation.
         void invoke<InterfaceContext>("interface_context")
@@ -273,9 +282,16 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         });
         if (context) {
           documentId.current = context.document_id;
-          setView(context.view);
+          if (!navigationPending.current) setView(context.view);
           if (context.tray_result) acceptTrayResult(context.tray_result);
           if (context.diagnostic_pending) diagnosticQueued.current = true;
+          handshakeReady.current = true;
+          if (navigationPending.current) {
+            navigationPending.current = false;
+            const pending = await invoke<InterfaceContext>("interface_context");
+            if (pending?.tray_result) acceptTrayResult(pending.tray_result);
+            if (pending?.diagnostic_pending) diagnosticQueued.current = true;
+          }
           await refresh();
           return;
         }
