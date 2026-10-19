@@ -21,6 +21,17 @@ try {
         # Ordinary user-owned directories cannot become trusted service roots.
         $owner = (Get-Acl -LiteralPath $Fixture).GetOwner([Security.Principal.SecurityIdentifier]).Value
         if ($owner -notin $script:Trusted) { Must-Fail { Assert-ProtectedDirectory $Fixture } }
+        $script:AclFixture = [Security.AccessControl.DirectorySecurity]::new()
+        $script:AclFixture.SetOwner([Security.Principal.SecurityIdentifier]'S-1-5-32-544')
+        $script:AclFixture.SetAccessRuleProtection($true, $false)
+        function Get-Acl { return $script:AclFixture }
+        Must-Fail { Assert-TrustedAcl 'in-memory ACL' }
+        foreach ($sid in @('S-1-5-18', 'S-1-5-32-544')) {
+            $script:AclFixture.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]$sid, 'FullControl', 'Allow'))
+        }
+        Assert-TrustedAcl 'in-memory ACL'
+        $script:AclFixture.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]'S-1-5-32-545', 'Write', 'Allow'))
+        Must-Fail { Assert-TrustedAcl 'in-memory ACL' }
         # The positive inventory cases use an explicitly substituted test root.
         function Assert-ProtectedDirectory([string] $Path) { Assert-RegularPath $Path $true }
         foreach ($name in $script:PayloadNames) { [IO.File]::WriteAllText((Join-Path $Fixture $name), $name) }

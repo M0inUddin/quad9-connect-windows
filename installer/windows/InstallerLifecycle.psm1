@@ -24,13 +24,21 @@ function Assert-TrustedAcl([string] $Path, [bool] $AllowRead = $true, [bool] $Re
         throw "Untrusted owner or inherited installation permissions: $Path"
     }
     $write = [Security.AccessControl.FileSystemRights]'WriteData, AppendData, WriteExtendedAttributes, WriteAttributes, Delete, DeleteSubdirectoriesAndFiles, ChangePermissions, TakeOwnership'
+    $full = [Security.AccessControl.FileSystemRights]::FullControl
+    $systemFull = $false
+    $adminFull = $false
     foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
         if ($rule.AccessControlType -ne 'Allow' -or
             ($rule.IdentityReference.Value -notin $script:Trusted -and
                 (-not $AllowRead -or ($rule.FileSystemRights -band $write)))) {
             throw "Unsafe installation permissions: $Path"
         }
+        if (($rule.FileSystemRights -band $full) -eq $full) {
+            if ($rule.IdentityReference.Value -eq 'S-1-5-18') { $systemFull = $true }
+            if ($rule.IdentityReference.Value -eq 'S-1-5-32-544') { $adminFull = $true }
+        }
     }
+    if (-not $systemFull -or -not $adminFull) { throw "Missing administrator/SYSTEM access or an empty/null DACL: $Path" }
 }
 
 function New-ProtectedDirectory([string] $Path) {
@@ -187,6 +195,8 @@ function Set-MaintenanceGate {
 }
 
 function Clear-MaintenanceGate {
+    if (-not (Test-Path -LiteralPath $script:Data)) { return }
+    Assert-ProtectedDirectory $script:Data $false
     $path = Join-Path $script:Data 'installer-maintenance'
     if (Test-Path -LiteralPath $path) { Assert-RegularPath $path; Assert-TrustedAcl $path $false; Remove-Item -LiteralPath $path }
 }
