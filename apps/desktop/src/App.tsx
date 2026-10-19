@@ -92,6 +92,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   const [prefs, setPrefs] = useState(() => loadPreferences(localStorage));
   const [busy, setBusy] = useState<string | null>("Reading service state");
   const [error, setError] = useState<string | null>(null);
+  const [monitorUnavailable, setMonitorUnavailable] = useState(false);
   const [probe, setProbe] = useState<Probe | null>(null);
   const lock = useRef(false);
   const retry = useRef<Request | null>(null);
@@ -196,10 +197,10 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
       );
       invalidate();
     });
-    const reportMonitorError = () =>
-      setError(
-        "Network monitoring is unavailable. Reopen the app after changing networks.",
-      );
+    const reportMonitorError = () => {
+      setMonitorUnavailable(true);
+      invalidate();
+    };
     const monitorError = listen<string>(
       "network-monitor-error",
       reportMonitorError,
@@ -379,6 +380,18 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         ))}
       </nav>
       <main id="main-content">
+        {monitorUnavailable && (
+          <div className="error-box" role="alert">
+            <Icon name="alert" />
+            <div>
+              <strong>Automatic DNS checks are unavailable</strong>
+              <p>
+                Reopen the app to restart monitoring. Manual checks and
+                restoration remain available.
+              </p>
+            </div>
+          </div>
+        )}
         {error && (
           <div className="error-box" role="alert">
             <Icon name="alert" />

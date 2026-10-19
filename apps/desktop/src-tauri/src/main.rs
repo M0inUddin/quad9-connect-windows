@@ -73,51 +73,54 @@ fn observe_network(app: tauri::AppHandle) -> std::io::Result<()> {
         .name("quad9-network-observer".into())
         .spawn(move || {
             let generation = host.requests.generation.clone();
-            let watcher = match quad9_native::network::NetworkWatcher::start(generation.clone()) {
-                Ok(watcher) => watcher,
-                Err(error) => {
-                    eprintln!("Network notifications unavailable: {error}");
-                    if let Ok(mut saved) = host.monitor_error.lock() {
-                        *saved = Some(error.to_string());
+            let result = (|| {
+                let watcher = quad9_native::network::NetworkWatcher::start(generation.clone())?;
+                while !host.stop.load(Ordering::Acquire) {
+                    if !watcher.wait(std::time::Duration::from_millis(250))? {
+                        continue;
                     }
-                    let _ = app.emit("network-monitor-error", error.to_string());
-                    return;
-                }
-            };
-            while !host.stop.load(Ordering::Acquire) {
-                if !watcher.wait(std::time::Duration::from_millis(250)) {
-                    continue;
-                }
-                unknown_tray(&app, "Network changed; checking DNS");
-                let _ = app.emit("network-changed", generation.load(Ordering::SeqCst));
-                // A burst gets one read after 250 ms quiet, or after two seconds at
-                // most. The wait consumes notifications, never polls adapter state.
-                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-                loop {
-                    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-                    if remaining.is_zero()
-                        || !watcher.wait(remaining.min(std::time::Duration::from_millis(250)))
-                    {
+                    unknown_tray(&app, "Network changed; checking DNS");
+                    let _ = app.emit("network-changed", generation.load(Ordering::SeqCst));
+                    // A burst gets one read after 250 ms quiet, or after two seconds at
+                    // most. The wait consumes notifications, never polls adapter state.
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+                    loop {
+                        let remaining =
+                            deadline.saturating_duration_since(std::time::Instant::now());
+                        if remaining.is_zero()
+                            || !watcher
+                                .wait(remaining.min(std::time::Duration::from_millis(250)))?
+                        {
+                            break;
+                        }
+                    }
+                    if host.stop.load(Ordering::Acquire) {
                         break;
                     }
-                }
-                if host.stop.load(Ordering::Acquire) {
-                    break;
-                }
-                // Refresh once more after the burst so a read started at the
-                // first signal cannot leave a view of an intermediate network.
-                let _ = app.emit("network-changed", generation.load(Ordering::SeqCst));
-                match host
-                    .requests
-                    .execute(&request(Command::GetStatus), quad9_service::host::send)
-                {
-                    Ok(observed)
-                        if matches!(observed.response.result, ResultBody::Status { .. }) =>
+                    // Refresh once more after the burst so a read started at the
+                    // first signal cannot leave a view of an intermediate network.
+                    let _ = app.emit("network-changed", generation.load(Ordering::SeqCst));
+                    match host
+                        .requests
+                        .execute(&request(Command::GetStatus), quad9_service::host::send)
                     {
-                        update_tray(&app, &observed.response)
+                        Ok(observed)
+                            if matches!(observed.response.result, ResultBody::Status { .. }) =>
+                        {
+                            update_tray(&app, &observed.response)
+                        }
+                        _ => unknown_tray(&app, "Service unavailable"),
                     }
-                    _ => unknown_tray(&app, "Service unavailable"),
                 }
+                Ok::<(), quad9_native::NativeError>(())
+            })();
+            if let Err(error) = result {
+                eprintln!("Network notifications unavailable: {error}");
+                if let Ok(mut saved) = host.monitor_error.lock() {
+                    *saved = Some(error.to_string());
+                }
+                unknown_tray(&app, "Automatic checks unavailable");
+                let _ = app.emit("network-monitor-error", error.to_string());
             }
         })
         .map(|_| ())

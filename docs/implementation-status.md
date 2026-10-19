@@ -13,7 +13,7 @@ Version 0.1 is under development. It is not a supported public release.
 - A cancellable system-resolver query with one outstanding query at most. A protocol observation describes that lookup, not all network traffic.
 - Development service install/removal scripts. Removal restores app-owned settings first and retains the service when restoration cannot complete.
 - A first Tauri 2/React desktop client with explicit adapter and family selection, enable/restore controls, scoped diagnostic results, and per-user light/dark/system themes. The native host uses typed authenticated IPC, a single app instance, close-to-tray behavior, and a tray menu with restore and quit controls.
-- Native IP interface, address, and route notifications with coalesced status reads and diagnostic invalidation. Reads that span a network change cannot republish stale observations. See [network observation](network-observation.md) for coverage and limits.
+- Native IP interface, address, route, DNS configuration, and policy notifications with coalesced status reads and diagnostic invalidation. Missing or replaced policy keys remain observed. Reads that span a change cannot republish stale observations, and monitoring failures remain visible. See [network observation](network-observation.md) for coverage and limits.
 
 The service rejects managed DNS policies, profile-specific settings, unknown encryption properties, unsupported adapters, uncovered active resolver scopes, and IPv6 without a preferred global address and gateway. These conservative checks require compatibility testing before broader support.
 
@@ -23,7 +23,7 @@ Deterministic Rust tests cover transaction boundaries, external edits, missing a
 
 The `Native DNS contract in disposable VMs` workflow uses fresh Windows Server 2022 and 2025 machines. It checks IPv4 and IPv6 strict DoH writes and exact restoration of automatic settings, ordered static servers, and existing DoH properties. The service portion installs a real LocalSystem service and runs clients under separate standard-user tokens. The `vm-validation` feature permits the hosted VM's virtual Ethernet adapter only in an explicitly selected development entry point.
 
-Desktop validation includes eight state/preference tests and thirteen browser interaction tests. The browser cases cover the enable/restore flow, retry identity after a lost response, diagnostics while a mutation receipt is pending, completed and in-flight diagnostic invalidation after a network event, an event during the final post-action refresh, service loss, recovery, themes, keyboard access, high contrast, reduced motion, and narrow layout. A production browser check confirms preview fixtures cannot activate. [Screenshots](screenshots/README.md) show the running browser UI with labeled sample data. They do not demonstrate native tray or Windows 11 behavior. CI separately builds the native Windows host with MSVC.
+Desktop validation includes eight state/preference tests and fourteen browser interaction tests. The browser cases cover the enable/restore flow, retry identity after a lost response, diagnostics while a mutation receipt is pending, completed and in-flight diagnostic invalidation after a network event, an event during the final post-action refresh, a persistent monitoring failure notice through a mocked native event bridge, service loss, recovery, themes, keyboard access, high contrast, reduced motion, and narrow layout. A production browser check confirms preview fixtures cannot activate. [Screenshots](screenshots/README.md) show the running browser UI with labeled sample data. They do not demonstrate native tray or Windows 11 behavior. CI separately builds the native Windows host with MSVC.
 
 The actual packaged client also passed a startup/IPC smoke check on Windows build 10.0.26300.0 with the service absent. It loads embedded assets, reaches the Rust pipe client, reports service unavailability, disables Enable, changes its theme, and produces a native WebView screenshot. This changes no host DNS settings and does not establish tray lifecycle or Windows 11 service write/restore support.
 
@@ -32,7 +32,7 @@ Server results are API development evidence. They do not establish Windows 11 su
 ## Remaining release work
 
 1. Run the complete write, restore, service, authorization, and recovery matrix on disposable Windows 11 x64 builds and physical adapters.
-2. Add observation for DNS-only and policy changes, and validate IP notifications during physical handoffs and sleep/resume. Reconcile external changes without rewriting them.
+2. Validate IP and DNS notifications during physical handoffs, policy deployment, and sleep/resume. Reconcile external changes without rewriting them.
 3. Validate the native window and tray lifecycle on Windows 11, then add application startup preferences and connection notifications.
 4. Add direct upstream diagnostics and bounded operational logging for startup failures.
 5. Implement NSIS installation, signed distribution, service replacement, upgrade recovery, and uninstall lifecycle tests.

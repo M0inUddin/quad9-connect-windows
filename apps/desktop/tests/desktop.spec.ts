@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import type { Request } from "../src/protocol";
+import type { Request, Result } from "../src/protocol";
 
 test("stale persisted adapters cannot trap Enable in an unsupported scope", async ({
   page,
@@ -226,6 +226,118 @@ test("a diagnostic completing after a network change stays invalidated", async (
   await expect(
     page.getByText("DNS over HTTPS observed", { exact: true }),
   ).toHaveCount(0);
+});
+
+test("a native monitoring failure clears old evidence and remains visible after a manual check", async ({
+  page,
+}) => {
+  // Mock the native event bridge for this failure case. Other native startup
+  // and IPC behavior is exercised by the packaged Windows smoke test.
+  await page.addInitScript(() => {
+    let next = 0;
+    const callbacks = new Map<number, (event: unknown) => void>();
+    const listeners = new Map<string, Set<number>>();
+    Object.assign(window, {
+      isTauri: true,
+      __TAURI_INTERNALS__: {
+        transformCallback(callback: (event: unknown) => void) {
+          callbacks.set(++next, callback);
+          return next;
+        },
+        async invoke(
+          command: string,
+          args: { event?: string; handler?: number; request?: Request },
+        ) {
+          if (command === "plugin:event|listen") {
+            if (!listeners.has(args.event!))
+              listeners.set(args.event!, new Set());
+            listeners.get(args.event!)!.add(args.handler!);
+            return args.handler;
+          }
+          if (
+            command === "plugin:event|unlisten" ||
+            command === "network_monitor_error"
+          )
+            return null;
+          if (command !== "service_request" || !args.request)
+            throw new Error(`Unexpected test IPC: ${command}`);
+          const request = args.request;
+          let result: Result;
+          switch (request.command.type) {
+            case "get_status":
+              result = {
+                type: "status",
+                revision: 0,
+                recovery_blocked: false,
+                observed_matches: false,
+                journal: null,
+              };
+              break;
+            case "list_adapters":
+              result = { type: "adapters", adapters: [] };
+              break;
+            case "run_diagnostics":
+              result = {
+                type: "diagnostics",
+                report: {
+                  outcome: "doh_observed",
+                  elapsed_ms: 1,
+                  checked_at_unix_seconds: 1,
+                  scope: "One mocked lookup",
+                },
+              };
+              break;
+            default:
+              throw new Error(
+                "A monitoring failure must not issue a DNS mutation",
+              );
+          }
+          return { version: 1, id: request.id, result };
+        },
+      },
+      __TAURI_EVENT_PLUGIN_INTERNALS__: {
+        unregisterListener(event: string, id: number) {
+          listeners.get(event)?.delete(id);
+          callbacks.delete(id);
+        },
+      },
+      emitNativeTest(event: string, payload: unknown) {
+        listeners
+          .get(event)
+          ?.forEach((id) => callbacks.get(id)?.({ event, id, payload }));
+      },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Run diagnostics", exact: true })
+    .click();
+  await expect(
+    page.getByText("DNS over HTTPS observed", { exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() =>
+    (
+      window as unknown as {
+        emitNativeTest: (event: string, payload: unknown) => void;
+      }
+    ).emitNativeTest("network-monitor-error", "injected failure"),
+  );
+  await expect(
+    page.getByText("Automatic DNS checks are unavailable", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("DNS over HTTPS observed", { exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Run diagnostics", exact: true })
+    .click();
+  await expect(
+    page.getByText("DNS over HTTPS observed", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Automatic DNS checks are unavailable", { exact: true }),
+  ).toBeVisible();
 });
 
 test("production browser content cannot activate sample service data", async ({
