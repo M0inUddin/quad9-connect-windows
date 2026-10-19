@@ -306,21 +306,25 @@ function Resolve-StagedCandidate([object] $Staging, [object] $State) {
     if ($State -and $State.installed) { $allowed += Get-CurrentManifest $State -RecoveryOnly }
     $service = Assert-ServiceIdentity $allowed
     if ($service -and $service.PathName -ceq (Get-ServiceCommand $candidate)) { throw 'A staged candidate is registered without replacement intent. Preserve it for administrator recovery.' }
-    $source = Get-VersionPath $candidate
+    Move-RetainedVersion $candidate 'retained-staging'
+    Remove-Item -LiteralPath (Join-Path $script:Root 'staging.json')
+}
+
+function Move-RetainedVersion([object] $Manifest, [ValidateSet('retained-staging', 'retained-removal')][string] $Folder) {
+    $source = Get-VersionPath $Manifest
     if (Test-Path -LiteralPath $source) {
         Assert-RegularPath $source $true
         Assert-TrustedAcl $source
-        $retained = Join-Path $script:Root 'retained-staging'
+        $retained = Join-Path $script:Root $Folder
         if (-not (Test-Path -LiteralPath $retained)) { New-ProtectedDirectory $retained }
         Assert-ProtectedDirectory $retained
-        $destination = Join-Path $retained ($candidate.id + '-' + [guid]::NewGuid().ToString('N'))
+        $destination = Join-Path $retained ($Manifest.id + '-' + [guid]::NewGuid().ToString('N'))
         # Both absolute paths are fixed descendants of the protected install root.
         # Directory.Move is a same-volume rename and never traverses nested links.
-        if ([IO.Path]::GetFullPath($source) -ine (Join-Path (Join-Path $script:Root 'versions') $candidate.id) -or
+        if ([IO.Path]::GetFullPath($source) -ine (Join-Path (Join-Path $script:Root 'versions') $Manifest.id) -or
             (Split-Path ([IO.Path]::GetFullPath($destination)) -Parent) -ine $retained) { throw 'Unexpected staging recovery scope.' }
         [IO.Directory]::Move($source, $destination)
     }
-    Remove-Item -LiteralPath (Join-Path $script:Root 'staging.json')
 }
 
 function Test-WebView2 {
@@ -374,7 +378,8 @@ function Install-Quad9Payload([string] $Payload, [string] $OperatorSid, [object]
     $destination = Get-VersionPath $manifest
     if (Test-Path -LiteralPath $destination) {
         # Reinstalling an identical payload uses the previously verified inventory.
-        $known = @($State.versions | Where-Object { $_.id -ceq $manifest.id })
+        $known = @()
+        if ($State) { $known = @($State.versions | Where-Object { $_.id -ceq $manifest.id }) }
         if ($known.Count -ne 1) { throw 'An unknown staged payload exists. Inspect it before repair.' }
         $manifest = $known[0]
         Assert-Manifest $manifest $destination -Installed
@@ -439,6 +444,11 @@ function Complete-Quad9Removal([object] $State) {
     if (Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue) { throw 'A service still exists. Refusing file removal.' }
     if (Test-Path -LiteralPath $script:Data) { Assert-ProtectedDirectory $script:Data $false; Clear-MaintenanceGate }
     Undo-Enrollment $State.enrollment
+    # Once reversed, later cleanup retries must not remove new administrator
+    # membership changes made after the successful removal.
+    $State.enrollment.member_added = $false
+    $State.enrollment.group_created = $false
+    Write-AtomicJson 'installation.json' $State
     foreach ($version in $State.versions) {
         $directory = Get-VersionPath $version
         if (-not (Test-Path -LiteralPath $directory)) { continue }
@@ -494,6 +504,9 @@ function Invoke-Quad9Lifecycle([string] $Operation, [string] $Payload, [string] 
         if ($staging) { Resolve-StagedCandidate $staging $state }
         if ($Operation -eq 'Install' -and $state -and -not $state.installed) {
             Complete-Quad9Removal $state
+            # Preserve unknown files left after removal without reserving the
+            # original build directory forever on an identical-build reinstall.
+            foreach ($version in $state.versions) { Assert-PayloadMetadata $version -Installed; Move-RetainedVersion $version 'retained-removal' }
             $state = $null
         }
         switch ($Operation) {

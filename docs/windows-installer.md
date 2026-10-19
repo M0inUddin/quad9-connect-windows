@@ -45,7 +45,7 @@ Repair first reconciles any interrupted installer transaction in `pending.json`,
 
 For manual diagnosis, stop `Quad9Connect`, then run the retained service binary as an administrator with `maintenance check` or `maintenance restore`. `check` reads and validates the persisted formats without DNS writes. `restore` uses the transaction engine and returns nonzero on incomplete recovery. Both commands refuse concurrent access to an active service's recovery store. Restart the service after diagnosis or an incomplete restore.
 
-Successful uninstall removes only inventoried files whose checksums still match, the service registration, the app shortcut, and operator membership created by setup. Preexisting membership and shared groups remain. Changed or unknown files remain for inspection. Close the interface before removal if Windows reports a file in use. Protected `%ProgramData%\Quad9Connect` recovery records and small installation metadata remain. They are never recursively deleted by setup.
+Successful uninstall removes only inventoried files whose checksums still match, the service registration, the app shortcut, and operator membership created by setup. Preexisting membership and shared groups remain. Changed or unknown files remain for inspection. A later reinstall moves remaining version directories under `retained-removal` so the same build can be installed again without deleting those files. Protected `%ProgramData%\Quad9Connect` recovery records and small installation metadata remain. They are never recursively deleted by setup.
 
 ## Build and validation
 

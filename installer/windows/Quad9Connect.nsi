@@ -162,7 +162,8 @@ Function OperatorLeave
     ReadINIStr $OperatorSid "$Stage\users.ini" Users "sid$Index"
   ${Else}
     StrCpy $OperatorSid ""
-    IfFileExists "$PROGRAMFILES64\Quad9Connect\installation.json" upgrade_selected
+    ReadINIStr $0 "$Stage\users.ini" Users installed
+    StrCmp $0 "1" upgrade_selected
     MessageBox MB_ICONEXCLAMATION "Choose the local user who will control DNS."
     Abort
     upgrade_selected:

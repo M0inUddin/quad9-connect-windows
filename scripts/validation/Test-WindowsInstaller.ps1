@@ -100,6 +100,8 @@ try {
     if ($status.result.revision -ne 0 -or $null -ne $status.result.journal) { throw 'Fresh installation enabled DNS.' }
     Assert-Baseline
     # Refuse removal before deleting retry commands when the tray UI is open.
+    $previousProfile = $env:WEBVIEW2_USER_DATA_FOLDER
+    $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $output 'interface-profile'
     $interface = Start-Process -FilePath (Join-Path (Current-Directory) 'quad9-desktop.exe') -WindowStyle Hidden -PassThru
     try {
         Start-Sleep -Seconds 2
@@ -110,6 +112,7 @@ try {
     } finally {
         if (-not $interface.HasExited) { Stop-Process -Id $interface.Id -Force; $interface.WaitForExit() }
         $interface.Dispose()
+        $env:WEBVIEW2_USER_DATA_FOLDER = $previousProfile
     }
     # A new standard-user token sees the explicit enrollment and cannot write
     # installed binaries, recovery state, or invoke offline administrator recovery.
@@ -132,6 +135,7 @@ try {
         if ($blocked.result.type -ne 'error' -or $blocked.result.code -ne 'maintenance') { throw 'Installer gate allowed a DNS mutation.' }
     } finally { Remove-Item -LiteralPath $gate }
     Enable-VM
+    [IO.File]::WriteAllText((Join-Path (Join-Path $root ('versions\' + $initial.current)) 'external-note.txt'), 'preserve this unrelated file')
     $journalHash = (Get-FileHash -LiteralPath (Join-Path $data 'dns.journal.json')).Hash
     # Simulate termination midway through copying a new directory, before any
     # service replacement. Retry retains the partial bytes and resumes safely.
@@ -214,9 +218,13 @@ try {
     if ((Get-Service Quad9Connect -ErrorAction SilentlyContinue) -or (State).installed -or (Get-LocalGroup Quad9ConnectOperators -ErrorAction SilentlyContinue)) { throw 'Safe uninstall left installed resources or operator enrollment.' }
     if (-not (Test-Path -LiteralPath (Join-Path $data 'dns.journal.json'))) { throw 'Uninstall discarded the audit and recovery journal.' }
     if (-not (Test-Path -LiteralPath (Join-Path $obsoleteDirectory 'quad9-service.exe'))) { throw 'Uninstall deleted a changed obsolete file.' }
+    $operatorsIni = Join-Path $output 'operators-after-removal.ini'
+    & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $repo 'installer\windows\List-Operators.ps1') -OutputPath $operatorsIni
+    if ($LASTEXITCODE -ne 0 -or [IO.File]::ReadAllText($operatorsIni) -notmatch '(?m)^installed=0\r?$') { throw 'Removed metadata incorrectly permits keeping operator access during reinstall.' }
     # Reinstall after removal must discard inventories of files already removed.
     Run-Setup $Installer ('/S /OPERATORSID=' + $user.SID.Value)
     Assert-Baseline
+    if (-not @(Get-ChildItem -LiteralPath (Join-Path $root 'retained-removal') -Filter external-note.txt -Recurse -File).Count) { throw 'Reinstall lost retained unrelated files.' }
     Run-Setup (Join-Path (Current-Directory) 'Uninstall.exe') '/S'
     Assert-Baseline
     [ordered]@{ result = 'passed'; first_install_dns_unchanged = $true; open_interface_preserved = $true; standard_user_authorization = $true; maintenance_gate = $true; partial_staging_recovered = $true; active_upgrade = $true; failed_upgrade_rollback = $true; interrupted_upgrade = $true; missing_candidate_ui_recovered = $true; conflict_blocks_uninstall = $true; quiet_uninstall_exit_code = $true; administrator_repair = $true; uninstall_restores_dns = $true; reinstall = $true; os_build = [Environment]::OSVersion.Version.Build } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'installer-validation.json')
