@@ -59,7 +59,13 @@ function Write-AtomicJson([string] $Name, [object] $Value) {
     $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($Value | ConvertTo-Json -Depth 30 -Compress))
     $file = [IO.File]::Open($temporary, 'CreateNew', 'Write', 'None')
     try { $file.Write($bytes, 0, $bytes.Length); $file.Flush($true) } finally { $file.Dispose() }
-    if (Test-Path -LiteralPath $path) { [IO.File]::Replace($temporary, $path, $null) }
+    if (Test-Path -LiteralPath $path) {
+        # A real backup path also avoids Windows PowerShell converting a null
+        # string argument into an invalid empty path for File.Replace.
+        $backup = "$path.previous"
+        if (Test-Path -LiteralPath $backup) { Assert-RegularPath $backup; Assert-TrustedAcl $backup; Remove-Item -LiteralPath $backup }
+        [IO.File]::Replace($temporary, $path, $backup)
+    }
     else { [IO.File]::Move($temporary, $path) }
 }
 
@@ -191,7 +197,8 @@ function Add-Enrollment([object] $Enrollment) {
     $group = Get-LocalGroup -Name Quad9ConnectOperators -ErrorAction SilentlyContinue
     if ($null -eq $group) { $group = New-LocalGroup -Name Quad9ConnectOperators -Description 'Users authorized to control Quad9 DNS' }
     if (-not @(Get-LocalGroupMember -Group $group | Where-Object { $_.SID.Value -eq $Enrollment.sid }).Count) {
-        Add-LocalGroupMember -Group $group -Member ([Security.Principal.SecurityIdentifier]$Enrollment.sid)
+        $user = Get-LocalUser -SID ([Security.Principal.SecurityIdentifier]$Enrollment.sid)
+        Add-LocalGroupMember -Group $group -Member $user
     }
 }
 

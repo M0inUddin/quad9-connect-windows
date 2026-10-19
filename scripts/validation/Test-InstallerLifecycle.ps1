@@ -79,13 +79,21 @@ try {
         function Assert-ServiceIdentity { throw 'The SCM command was changed externally' }
         Must-Fail { Repair-Quad9Payload $state }
         if ($script:Events.Count) { throw 'Repair modified an unrelated service registration.' }
+        Write-AtomicJson 'atomic-test.json' ([pscustomobject]@{ schema = 1; revision = 1 })
+        Write-AtomicJson 'atomic-test.json' ([pscustomobject]@{ schema = 1; revision = 2 })
+        if ((Read-InstallJson 'atomic-test.json').revision -ne 2 -or
+            (Get-Content -LiteralPath (Join-Path $Fixture 'atomic-test.json.previous') -Raw | ConvertFrom-Json).revision -ne 1) { throw 'Atomic replacement lost the new or previous metadata.' }
         # Windows limits local-group descriptions to 48 characters. Exercise that
         # binding contract before actual installation instead of accepting any text.
         $script:EnrollmentAdds = 0
         function Get-LocalGroup { return $null }
         function New-LocalGroup([string] $Name, [ValidateLength(0,48)][string] $Description) { return [pscustomobject]@{ Name = $Name } }
         function Get-LocalGroupMember { return @() }
-        function Add-LocalGroupMember { $script:EnrollmentAdds++ }
+        function Get-LocalUser { return [pscustomobject]@{ Kind = 'LocalPrincipal' } }
+        function Add-LocalGroupMember([object] $Group, [object] $Member) {
+            if ($Member -is [Security.Principal.SecurityIdentifier] -or $Member.Kind -ne 'LocalPrincipal') { throw 'Member requires a local principal, not a SecurityIdentifier object.' }
+            $script:EnrollmentAdds++
+        }
         Add-Enrollment ([pscustomobject]@{ sid = 'S-1-5-21-1-2-3-1001' })
         if ($script:EnrollmentAdds -ne 1) { throw 'Explicit operator enrollment was not applied.' }
     } $fixture
