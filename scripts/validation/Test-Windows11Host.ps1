@@ -67,7 +67,7 @@ function Remove-HostTestInstallation {
             throw 'The installed service is no longer this test build; retain it for inspection.'
         }
         try {
-            & (Join-Path $runRoot 'Uninstall-DevelopmentService.ps1')
+            & (Join-Path $runRoot 'scripts\Uninstall-DevelopmentService.ps1')
         } catch {
             # Prevent further service writes before attempting the narrow native
             # recovery below. Keep the binary and journal if uninstall failed.
@@ -165,9 +165,8 @@ try {
     foreach ($file in @('Test-Windows11Host.ps1', 'NativeDnsApi.ps1', 'HostValidationHelpers.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $runRoot $file)
     }
-    foreach ($file in @('Install-DevelopmentService.ps1', 'Uninstall-DevelopmentService.ps1')) {
-        Copy-Item -LiteralPath (Join-Path $PSScriptRoot "..\$file") -Destination (Join-Path $runRoot $file)
-    }
+    . (Join-Path $PSScriptRoot 'HostValidationHelpers.ps1')
+    Copy-HostServiceScripts -ScriptsDirectory (Join-Path $PSScriptRoot '..') -RunDirectory $runRoot
     Copy-Item -LiteralPath $BinaryPath -Destination (Join-Path $runRoot 'quad9-service.exe')
     Copy-Item -LiteralPath $InspectorPath -Destination (Join-Path $runRoot 'quad9-inspect.exe')
     . (Join-Path $runRoot 'NativeDnsApi.ps1')
@@ -239,7 +238,7 @@ try {
     $record.stage = 'service_install'
     $operator = ([Security.Principal.SecurityIdentifier]$OperatorSid).Translate([Security.Principal.NTAccount]).Value
     New-Item -ItemType File -Path (Join-Path $runRoot 'installation-started') | Out-Null
-    & (Join-Path $runRoot 'Install-DevelopmentService.ps1') -BinaryPath (Join-Path $runRoot 'quad9-service.exe') -OperatorAccount $operator
+    & (Join-Path $runRoot 'scripts\Install-DevelopmentService.ps1') -BinaryPath (Join-Path $runRoot 'quad9-service.exe') -OperatorAccount $operator
     $service = Get-CimInstance Win32_Service -Filter "Name='Quad9Connect'"
     if ($service.StartName -ne 'LocalSystem') { throw 'The service did not start as LocalSystem.' }
     $status = Invoke-HostCommand @{ type = 'get_status' }

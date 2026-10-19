@@ -1,5 +1,22 @@
 Set-StrictMode -Version Latest
 
+function Copy-HostServiceScripts {
+    param([string] $ScriptsDirectory, [string] $RunDirectory)
+    $scriptDirectory = Join-Path $RunDirectory 'scripts'
+    $moduleDirectory = Join-Path $RunDirectory 'installer\windows'
+    if ((Test-Path -LiteralPath $scriptDirectory) -or (Test-Path -LiteralPath (Join-Path $RunDirectory 'installer'))) {
+        throw 'Host service staging requires fresh dependency directories.'
+    }
+    [IO.Directory]::CreateDirectory($scriptDirectory) | Out-Null
+    [IO.Directory]::CreateDirectory($moduleDirectory) | Out-Null
+    foreach ($file in @('Install-DevelopmentService.ps1', 'Uninstall-DevelopmentService.ps1', 'Use-ServiceSystemModules.ps1')) {
+        Copy-Item -LiteralPath (Join-Path $ScriptsDirectory $file) -Destination (Join-Path $scriptDirectory $file)
+    }
+    # Preserve the uninstaller's repository-relative module path inside the
+    # protected run directory, including for later recovery from the staged copy.
+    Copy-Item -LiteralPath (Join-Path $ScriptsDirectory '..\installer\windows\InstallerLifecycle.psm1') -Destination (Join-Path $moduleDirectory 'InstallerLifecycle.psm1')
+}
+
 function Remove-HostValidationBinary {
     param([string] $Path, [string] $ExpectedSha256)
     if (-not (Test-Path -LiteralPath $Path)) { return }
