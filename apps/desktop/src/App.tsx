@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { isTauri } from "@tauri-apps/api/core";
-import { connectionState, key, loadPreferences, makeRequest } from "./protocol";
+import {
+  connectionState,
+  eligibleTargets,
+  key,
+  loadPreferences,
+  makeRequest,
+} from "./protocol";
 import type {
   Adapter,
   Command,
@@ -115,8 +121,17 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
       );
     setStatus(response.result);
     const list = await send(makeRequest({ type: "list_adapters" }));
-    if (list.result.type === "adapters") setAdapters(list.result.adapters);
-    else if (list.result.type === "error") throw new Error(list.result.message);
+    if (list.result.type === "adapters") {
+      const current = list.result.adapters;
+      setAdapters(current);
+      // Remove old choices only after a successful, authoritative adapter read.
+      // Active restoration scope always comes from the service journal above.
+      setPrefs((p) => {
+        const targets = eligibleTargets(p.targets, current);
+        return targets.length === p.targets.length ? p : { ...p, targets };
+      });
+    } else if (list.result.type === "error")
+      throw new Error(list.result.message);
   }, [send]);
 
   useEffect(() => {

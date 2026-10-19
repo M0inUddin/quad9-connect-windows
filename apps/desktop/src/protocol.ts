@@ -57,6 +57,24 @@ export function makeRequest(command: Command): Request {
 export function key(target: Target) {
   return `${target.adapter_id}:${target.family}`;
 }
+
+export function eligibleTargets(
+  targets: Target[],
+  adapters: Adapter[],
+): Target[] {
+  const seen = new Set<string>();
+  return targets.filter((target) => {
+    const adapter = adapters.find((a) => a.id === target.adapter_id);
+    const eligible =
+      adapter?.candidate &&
+      (target.family === "ipv4"
+        ? adapter.ipv4_enabled
+        : adapter.ipv6_enabled && adapter.ipv6_usable);
+    if (!eligible || seen.has(key(target))) return false;
+    seen.add(key(target));
+    return true;
+  });
+}
 export function connectionState(
   status: Status | null,
 ): "unavailable" | "recovery" | "conflict" | "configured" | "off" {

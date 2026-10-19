@@ -22,7 +22,7 @@ Deterministic Rust tests cover transaction boundaries, external edits, missing a
 
 The `Native DNS contract in disposable VMs` workflow uses fresh Windows Server 2022 and 2025 machines. It checks IPv4 and IPv6 strict DoH writes and exact restoration of automatic settings, ordered static servers, and existing DoH properties. The service portion installs a real LocalSystem service and runs clients under separate standard-user tokens. The `vm-validation` feature permits the hosted VM's virtual Ethernet adapter only in an explicitly selected development entry point.
 
-Desktop validation includes seven state/preference tests and eight browser interaction tests. The browser cases cover the enable/restore flow, retry identity after a lost response, service loss, recovery, themes, keyboard access, high contrast, reduced motion, and narrow layout. A production browser check confirms preview fixtures cannot activate. [Screenshots](screenshots/README.md) show the running browser UI with labeled sample data. They do not demonstrate native tray or Windows 11 behavior. CI separately builds the native Windows host with MSVC.
+Desktop validation includes eight state/preference tests and nine browser interaction tests. The browser cases cover the enable/restore flow, retry identity after a lost response, service loss, recovery, themes, keyboard access, high contrast, reduced motion, and narrow layout. A production browser check confirms preview fixtures cannot activate. [Screenshots](screenshots/README.md) show the running browser UI with labeled sample data. They do not demonstrate native tray or Windows 11 behavior. CI separately builds the native Windows host with MSVC.
 
 Server results are API development evidence. They do not establish Windows 11 support. No service or DNS mutation is installed or run on the developer's host by these checks. Interrupted transaction decisions are covered by deterministic tests; full Windows crash/power-loss and filesystem durability scenarios still require dedicated testing.
 
@@ -34,3 +34,4 @@ Server results are API development evidence. They do not establish Windows 11 su
 4. Add direct upstream diagnostics and bounded operational logging for startup failures.
 5. Implement NSIS installation, signed distribution, service replacement, upgrade recovery, and uninstall lifecycle tests.
 6. Complete accessibility, resource, sleep/wake, VPN interference, and specification acceptance measurements.
+

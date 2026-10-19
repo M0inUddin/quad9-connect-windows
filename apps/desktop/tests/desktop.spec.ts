@@ -1,6 +1,54 @@
 import { test, expect } from "@playwright/test";
 import type { Request } from "../src/protocol";
 
+test("stale persisted adapters cannot trap Enable in an unsupported scope", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      "quad9-preferences-v1",
+      JSON.stringify({
+        theme: "system",
+        targets: [
+          {
+            adapter_id: "11111111-1111-1111-1111-111111111111",
+            family: "ipv4",
+          },
+          {
+            adapter_id: "94ab1355-47d6-4f27-9dab-e211af887a51",
+            family: "ipv4",
+          },
+          {
+            adapter_id: "a956d6e1-8910-4d20-9a67-5e34915c2a10",
+            family: "ipv6",
+          },
+        ],
+      }),
+    ),
+  );
+  await page.goto("/?preview=off");
+  const enable = page.getByRole("button", {
+    name: "Enable Quad9",
+    exact: true,
+  });
+  await expect(enable).toBeVisible();
+  await expect(enable).toBeDisabled();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => JSON.parse(localStorage.getItem("quad9-preferences-v1")!).targets,
+      ),
+    )
+    .toEqual([]);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("checkbox", { name: "IPv4", exact: true }).check();
+  await page.getByRole("button", { name: "Connection", exact: true }).click();
+  await enable.click();
+  await expect(
+    page.getByRole("heading", { name: "Quad9 configured" }),
+  ).toBeVisible();
+});
+
 test("an uncertain Enable retries its original identity and payload", async ({
   page,
 }) => {

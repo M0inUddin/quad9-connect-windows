@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { connectionState, loadPreferences } from "./protocol";
-import type { Status } from "./protocol";
+import { connectionState, eligibleTargets, loadPreferences } from "./protocol";
+import type { Status, Adapter, Target } from "./protocol";
 const base: Status = {
   type: "status",
   revision: 1,
@@ -48,6 +48,38 @@ describe("service state presentation", () => {
   });
 });
 describe("local preferences", () => {
+  it("retains only distinct, currently eligible choices without adding adapters", () => {
+    const adapter: Adapter = {
+      id: "a956d6e1-8910-4d20-9a67-5e34915c2a10",
+      name: "Ethernet",
+      candidate: true,
+      exclusion_reason: null,
+      ipv4_enabled: true,
+      ipv6_enabled: true,
+      ipv6_usable: false,
+      has_ipv4_dns: true,
+      has_ipv6_dns: false,
+    };
+    const ipv4: Target = { adapter_id: adapter.id, family: "ipv4" };
+    const ipv6: Target = { ...ipv4, family: "ipv6" };
+    const targets: Target[] = [
+      ipv4,
+      ipv4,
+      ipv6,
+      { ...ipv4, adapter_id: "missing-adapter" },
+    ];
+    expect(eligibleTargets(targets, [adapter])).toEqual([ipv4]);
+    expect(
+      eligibleTargets(targets, [{ ...adapter, candidate: false }]),
+    ).toEqual([]);
+    expect(
+      eligibleTargets([ipv4], [{ ...adapter, ipv4_enabled: false }]),
+    ).toEqual([]);
+    expect(
+      eligibleTargets([ipv6], [{ ...adapter, ipv6_usable: true }]),
+    ).toEqual([ipv6]);
+    expect(eligibleTargets([], [adapter])).toEqual([]);
+  });
   it("ignores corrupt storage and unsupported themes", () => {
     expect(loadPreferences({ getItem: () => "broken" })).toEqual({
       theme: "system",
