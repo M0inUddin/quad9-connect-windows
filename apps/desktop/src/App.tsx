@@ -312,7 +312,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
     };
   }, [invalidate]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     let alive = true;
     markStartup("effect");
     (async () => {
