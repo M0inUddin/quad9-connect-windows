@@ -5,6 +5,7 @@ $script:Data = Join-Path ([Environment]::GetFolderPath('CommonApplicationData'))
 $script:Trusted = @('S-1-5-18', 'S-1-5-32-544')
 $script:PayloadNames = @('quad9-service.exe', 'quad9-desktop.exe', 'Manage-Quad9Installation.ps1', 'InstallerLifecycle.psm1', 'LICENSE.txt')
 $script:Arp = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Quad9Connect'
+$script:StartupTaskPrefix = 'Quad9Connect.Startup.'
 
 function Assert-RegularPath([string] $Path, [bool] $Directory = $false) {
     $item = Get-Item -LiteralPath $Path -Force
@@ -229,7 +230,124 @@ function Undo-Enrollment([object] $Enrollment) {
     if ($Enrollment.group_created -and @(Get-LocalGroupMember -Group $group).Count -eq 0) { Remove-LocalGroup -InputObject $group }
 }
 
-function Publish-Installation([object] $State) {
+function Get-StartupSid([string] $Identity) {
+    try { return ([Security.Principal.SecurityIdentifier]::new($Identity)).Value }
+    catch { return ([Security.Principal.NTAccount]::new($Identity)).Translate([Security.Principal.SecurityIdentifier]).Value }
+}
+
+function Get-StartupTaskMode([object] $Task, [string[]] $KnownPaths) {
+    # A name alone never authorizes overwriting or removing a Windows task.
+    try {
+        $definition = $Task.Definition
+        $sid = Get-StartupSid $definition.Principal.UserId
+        if ($Task.Name -cne ($script:StartupTaskPrefix + $sid) -or
+            $definition.RegistrationInfo.Description -cne 'Quad9 Connect interface startup v1' -or
+            $definition.Principal.RunLevel -ne 0 -or $definition.Principal.LogonType -ne 3 -or
+            $definition.Actions.Count -ne 1 -or $definition.Triggers.Count -ne 1) { return $null }
+        $action = $definition.Actions.Item(1)
+        $trigger = $definition.Triggers.Item(1)
+        if ($action.Type -ne 0 -or $trigger.Type -ne 9 -or
+            (Get-StartupSid $trigger.UserId) -cne $sid -or
+            $action.Path -notin $KnownPaths -or
+            $action.WorkingDirectory -ine (Split-Path $action.Path -Parent)) { return $null }
+        if ([string]$action.Arguments -ceq '') { return 'window' }
+        if ($action.Arguments -ceq '--start-in-tray') { return 'tray' }
+    } catch { return $null }
+    return $null
+}
+
+function Open-StartupScheduler {
+    $service = New-Object -ComObject 'Schedule.Service'
+    $service.Connect()
+    return @{ Service = $service; Folder = $service.GetFolder('\') }
+}
+
+function Find-StartupTask([object] $Folder, [string] $Name) {
+    try { return $Folder.GetTask($Name) }
+    catch {
+        $failure = $_.Exception
+        while ($failure) {
+            if ($failure.HResult -eq -2147024894) { return $null } # HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)
+            $failure = $failure.InnerException
+        }
+        throw
+    }
+}
+
+function Invoke-Quad9StartupPreference([string] $Executable,
+    [ValidateSet('off', 'window', 'tray')][string] $Mode = 'off', [switch] $Write) {
+    $unavailable = @{ available = $false; mode = $null; message = 'Install Quad9 Connect and open its current version to manage Windows startup.' }
+    if (-not (Test-Path -LiteralPath $script:Root)) { return $unavailable }
+    Assert-ProtectedDirectory $script:Root
+    # Readers need no administrative permission. Sharing denies the installer's
+    # exclusive write lock, so task changes cannot race an upgrade or removal.
+    $lock = [IO.File]::Open((Join-Path $script:Root 'installation.lock'), 'Open', 'Read', 'Read')
+    try {
+        $state = Read-InstallJson 'installation.json'
+        if (-not $state -or -not $state.installed) { return $unavailable }
+        $directory = Get-VersionPath ([pscustomobject]@{ id = $state.current })
+        if ([IO.Path]::GetFullPath($Executable) -ine (Join-Path $directory 'quad9-desktop.exe')) { return $unavailable }
+        $null = Get-CurrentManifest $state
+        $paths = @($state.versions | ForEach-Object { Join-Path (Get-VersionPath $_) 'quad9-desktop.exe' })
+        $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $name = $script:StartupTaskPrefix + $sid
+        $scheduler = Open-StartupScheduler
+        $task = Find-StartupTask $scheduler.Folder $name
+        $existingMode = if ($task) { Get-StartupTaskMode $task $paths } else { $null }
+        if ($task -and -not $existingMode) { throw 'The Quad9 Windows startup task was changed outside the app. Review it in Task Scheduler before changing this preference.' }
+        if ($Write) {
+            if ($Mode -eq 'off') {
+                if ($task) { $scheduler.Folder.DeleteTask($name, 0) }
+                $task = $null
+            } else {
+                $definition = $scheduler.Service.NewTask(0)
+                $definition.RegistrationInfo.Description = 'Quad9 Connect interface startup v1'
+                $definition.Principal.UserId = $sid
+                $definition.Principal.LogonType = 3 # interactive token, no stored password
+                $definition.Principal.RunLevel = 0 # least privilege
+                $definition.Settings.ExecutionTimeLimit = 'PT0S'
+                $definition.Settings.DisallowStartIfOnBatteries = $false
+                $definition.Settings.StopIfGoingOnBatteries = $false
+                $definition.Settings.MultipleInstances = 2 # ignore another logon while running
+                $trigger = $definition.Triggers.Create(9)
+                $trigger.UserId = $sid
+                $action = $definition.Actions.Create(0)
+                $action.Path = Join-Path $directory 'quad9-desktop.exe'
+                $action.WorkingDirectory = $directory
+                $action.Arguments = if ($Mode -eq 'tray') { '--start-in-tray' } else { '' }
+                $flags = if ($task) { 4 } else { 2 } # update or create, never replace an unchecked name
+                $permissions = "D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;$sid)"
+                $task = $scheduler.Folder.RegisterTaskDefinition($name, $definition, $flags, $sid, $null, 3, $permissions)
+            }
+        }
+        $actual = if ($task -and $task.Enabled) { Get-StartupTaskMode $task $paths } else { 'off' }
+        if (-not $actual) { throw 'Windows returned an unexpected Quad9 startup task. Read the setting again before retrying.' }
+        return @{ available = $true; mode = $actual; message = $null }
+    } finally { $lock.Dispose() }
+}
+
+function Sync-Quad9StartupTasks([object] $State, [switch] $Remove) {
+    $paths = @($State.versions | ForEach-Object { Join-Path (Get-VersionPath $_) 'quad9-desktop.exe' })
+    $scheduler = Open-StartupScheduler
+    $current = if (-not $Remove) { Join-Path (Get-VersionPath (Get-CurrentManifest $State)) 'quad9-desktop.exe' } else { $null }
+    foreach ($task in $scheduler.Folder.GetTasks(1)) {
+        if (-not $task.Name.StartsWith($script:StartupTaskPrefix, [StringComparison]::Ordinal)) { continue }
+        if (-not (Get-StartupTaskMode $task $paths)) {
+            Write-Warning 'A changed or unrelated Windows startup task was preserved.'
+            continue
+        }
+        if ($Remove) { $scheduler.Folder.DeleteTask($task.Name, 0); continue }
+        $definition = $task.Definition
+        $sid = Get-StartupSid $definition.Principal.UserId
+        $definition.Actions.Item(1).Path = $current
+        $definition.Actions.Item(1).WorkingDirectory = Split-Path $current -Parent
+        # Preserve disabled tasks, arguments, and their user's access after an
+        # administrator updates the action for an account that may be logged out.
+        $null = $scheduler.Folder.RegisterTaskDefinition($task.Name, $definition, 20, $sid, $null, 3, $task.GetSecurityDescriptor(4))
+    }
+}
+
+function Publish-Installation([object] $State, [bool] $RefreshStartup = $true) {
     $manifest = Get-CurrentManifest $State
     $directory = Get-VersionPath $manifest
     New-Item -Path $script:Arp -Force | Out-Null
@@ -250,6 +368,7 @@ function Publish-Installation([object] $State) {
     $shortcut.TargetPath = Join-Path $directory 'quad9-desktop.exe'
     $shortcut.WorkingDirectory = $directory
     $shortcut.Save()
+    if ($RefreshStartup) { Sync-Quad9StartupTasks $State }
 }
 
 function Wait-Quad9ServiceRemoval([ValidateRange(0, 300)][int] $TimeoutSeconds = 30) {
@@ -417,7 +536,7 @@ function Install-Quad9Payload([string] $Payload, [string] $OperatorSid, [object]
         Start-InstalledService $manifest
         $next = New-InstallationState $manifest $State $enrollment
         Write-AtomicJson 'installation.json' $next
-        Publish-Installation $next
+        Publish-Installation $next ([bool]$previous)
         Clear-MaintenanceGate
         Remove-Item -LiteralPath (Join-Path $script:Root 'pending.json')
     } catch {
@@ -468,6 +587,7 @@ function Complete-Quad9Removal([object] $State) {
     if (Get-Service -Name Quad9Connect -ErrorAction SilentlyContinue) { throw 'A service still exists. Refusing file removal.' }
     if (Test-Path -LiteralPath $script:Data) { Assert-ProtectedDirectory $script:Data $false; Clear-MaintenanceGate }
     Remove-Quad9OperationalLog
+    Sync-Quad9StartupTasks $State -Remove
     Undo-Enrollment $State.enrollment
     # Once reversed, later cleanup retries must not remove new administrator
     # membership changes made after the successful removal.

@@ -1,6 +1,6 @@
 // Exercise the embedded Windows frontend and its real Tauri -> Rust -> pipe
 // failure path, without installing a service or changing DNS.
-import { chromium } from "@playwright/test";
+import { chromium, expect } from "@playwright/test";
 import { spawn } from "node:child_process";
 import { mkdir, mkdtemp } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -91,6 +91,15 @@ try {
   if (await page.getByText("INTERACTIVE PREVIEW", { exact: false }).count())
     throw new Error("Native app activated browser fixtures.");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(
+    page.getByText(
+      "Install Quad9 Connect and open its current version to manage Windows startup.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("group", { name: "Start Quad9 when signing in to Windows" }),
+  ).toHaveCount(0);
   await page.getByRole("radio", { name: "Light", exact: true }).check();
   await page.getByRole("button", { name: "Connection", exact: true }).click();
   await page.screenshot({

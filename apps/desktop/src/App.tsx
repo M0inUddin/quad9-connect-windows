@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { markStartup } from "./startup";
+import { StartupSettings } from "./StartupSettings";
 import {
   connectionState,
   eligibleTargets,
@@ -859,6 +860,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
                 </label>
               ))}
             </fieldset>
+            <StartupSettings preview={preview} />
             <div className="settings-section-title">
               <h3 className="section-label">Network adapters</h3>
               <span>Explicit selection</span>

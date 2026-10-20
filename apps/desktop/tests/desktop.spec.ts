@@ -410,6 +410,8 @@ test("production browser content cannot activate sample service data", async ({
   await expect(
     page.getByRole("note", { name: "Closing and quitting Quad9" }),
   ).toHaveCount(0);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Windows startup", exact: true })).toHaveCount(0);
 });
 
 test("explicit scope, enable, diagnostic, and restore flow", async ({

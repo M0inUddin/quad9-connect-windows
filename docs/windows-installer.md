@@ -12,6 +12,8 @@ Run a newer installer to upgrade. Choose **Keep existing access**. Upgrades reta
 
 Each payload lives in `%ProgramFiles%\Quad9Connect\versions\<SHA-256 build identifier>`. The previous payload remains available until removal. A failed replacement restores the previous service registration and starts that service without restoring or re-enabling committed DNS. The current v0.1 storage format is unchanged during upgrades. Unknown storage formats and pending recovery fail preflight instead of attempting a speculative migration. Future storage migrations require their own rollback design.
 
+**Settings > Windows startup** controls only the current user's interface at Windows sign-in. Choose Off, Open window, or Tray; the default is Off. No Quad9 account or saved password is involved. Each opted-in user has a least-privilege interactive task. Setup updates its executable path during upgrades and rollback, including for users who are logged out, while preserving its mode, disabled state, and user access. A shared installation lock prevents preference changes from racing setup. The DNS service's automatic startup remains independent.
+
 Setup records staging ownership before creating or copying a candidate directory. An interrupted copy is retained under the protected `retained-staging` directory on retry, without executing it or changing the registered service. Replacement recovery authenticates the previous recovery executable; missing or quarantined candidate UI files do not prevent rollback.
 
 For silent installation, specify an enabled local user SID explicitly:
@@ -46,6 +48,8 @@ Repair first reconciles any interrupted installer transaction in `pending.json`,
 For manual diagnosis, stop `Quad9Connect`, then run the retained service binary as an administrator with `maintenance check` or `maintenance restore`. `check` reads and validates the persisted formats without DNS writes. `restore` uses the transaction engine and returns nonzero on incomplete recovery. Both commands refuse concurrent access to an active service's recovery store. Restart the service after diagnosis or an incomplete restore.
 
 Successful uninstall removes only inventoried files whose checksums still match, the service registration, the app shortcut, and operator membership created by setup. Preexisting membership and shared groups remain. Changed or unknown files remain for inspection. A later reinstall moves remaining version directories under `retained-removal` so the same build can be installed again without deleting those files. Protected `%ProgramData%\Quad9Connect` recovery records and small installation metadata remain. They are never recursively deleted by setup.
+
+After DNS restoration and service removal, uninstall removes owned Windows startup tasks before deleting payloads. Ownership requires the task marker, SID-bound name, least-privilege interactive principal, matching logon trigger, and one known desktop action with supported arguments. A changed or unrelated task is preserved. If task cleanup fails, payload removal stops and can be retried. Selecting Off in the app removes only that user's owned registration and does not terminate its current interface.
 
 ## Build and validation
 

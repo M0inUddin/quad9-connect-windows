@@ -62,4 +62,6 @@ jobs:
             artifacts/installer-validation/*.json
             artifacts/installer-validation/*.out
             artifacts/installer-validation/*.err
+            artifacts/installer-validation/native-startup/*.json
+            artifacts/installer-validation/native-startup/*.png
           retention-days: 7

@@ -41,6 +41,19 @@ function Current-Directory {
     $state = State
     return Join-Path $root ('versions\' + $state.current)
 }
+function Test-Startup([string] $Mode) {
+    $client = Join-Path $output 'startup-client.ps1'
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Invoke-StartupTestClient.ps1') -Destination $client -Force
+    $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Desktop "{1}" -Mode {2}' -f
+        $client, (Join-Path (Current-Directory) 'quad9-desktop.exe'), $Mode
+    $process = Start-Process -FilePath $powershell -ArgumentList $arguments -Credential $credential -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $output "startup-$Mode.out") -RedirectStandardError (Join-Path $output "startup-$Mode.err")
+    try {
+        if ($process.ExitCode -ne 0) {
+            Get-Content -LiteralPath (Join-Path $output "startup-$Mode.err") | Write-Host
+            throw "Standard-user startup check failed: $Mode"
+        }
+    } finally { $process.Dispose() }
+}
 function Request([object] $Command, [string] $Id = ('test-' + [guid]::NewGuid().ToString('N'))) {
     $binary = Join-Path (Current-Directory) 'quad9-service.exe'
     $json = @{ version = 1; id = $Id; command = $Command } | ConvertTo-Json -Depth 12 -Compress
@@ -99,6 +112,16 @@ try {
     $status = Request @{ type = 'get_status' }
     if ($status.result.revision -ne 0 -or $null -ne $status.result.journal) { throw 'Fresh installation enabled DNS.' }
     Assert-Baseline
+    Test-Startup 'read-off'
+    Test-Startup 'tray'
+    Push-Location (Join-Path $repo 'apps/desktop')
+    try {
+        & node scripts/native-tray-startup.mjs (Join-Path (Current-Directory) 'quad9-desktop.exe') (Join-Path $output 'native-startup') --installed-startup
+        if ($LASTEXITCODE -ne 0) { throw 'Installed native UI Windows startup validation failed.' }
+    } finally { Pop-Location }
+    Assert-Baseline
+    $status = Request @{ type = 'get_status' }
+    if ($status.result.revision -ne 0 -or $null -ne $status.result.journal) { throw 'Windows startup preferences changed DNS management.' }
     # Refuse removal before deleting retry commands when the tray UI is open.
     $previousProfile = $env:WEBVIEW2_USER_DATA_FOLDER
     $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $output 'interface-profile'
@@ -109,6 +132,7 @@ try {
         & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path (Current-Directory) 'Manage-Quad9Installation.ps1') -Operation Uninstall
         if ($LASTEXITCODE -ne 1 -or -not (State).installed -or -not (Test-Path (Join-Path (Current-Directory) 'Manage-Quad9Installation.ps1'))) { throw 'An open interface caused partial quiet removal.' }
         Assert-Baseline
+        Test-Startup 'read-tray'
     } finally {
         if (-not $interface.HasExited) { Stop-Process -Id $interface.Id -Force; $interface.WaitForExit() }
         $interface.Dispose()
@@ -159,6 +183,9 @@ try {
     $upgraded = State
     if ($upgraded.current -eq $initial.current -or $upgraded.enrollment.sid -ne $user.SID.Value) { throw 'Upgrade did not change payload or preserve authorization.' }
     Assert-Active
+    Test-Startup 'read-tray'
+    Test-Startup 'window'
+    Test-Startup 'tray'
     if ((Get-FileHash -LiteralPath (Join-Path $data 'dns.journal.json')).Hash -ne $journalHash) { throw 'Upgrade rewrote the original journal.' }
 
     # This executable accepts preflight but cannot run as a service. Exercise
@@ -172,6 +199,7 @@ try {
     $bad = & (Join-Path $repo 'scripts\Build-WindowsInstaller.ps1') -ServiceBinary $badService -DesktopBinary $DesktopBinary -MakeNsis $MakeNsis -OutputDirectory $output -Version '0.1.0-dev.rejected'
     Run-Setup $bad '/S' 1
     if ((State).current -ne $upgraded.current -or (Get-Service Quad9Connect).Status -ne 'Running') { throw 'Failed upgrade did not restore the previous running service.' }
+    Test-Startup 'read-tray'
     Assert-Active
 
     # Simulate an interrupted replacement with durable pending metadata and a gate.
@@ -206,6 +234,7 @@ try {
     if ($quiet -notlike '*Manage-Quad9Installation.ps1* -Operation Uninstall') { throw 'Quiet uninstall does not use the synchronous lifecycle command.' }
     & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path (Current-Directory) 'Manage-Quad9Installation.ps1') -Operation Uninstall
     if ($LASTEXITCODE -ne 1 -or (Get-Service Quad9Connect).Status -ne 'Running') { throw 'Quiet uninstall did not report incomplete recovery and retain the service.' }
+    Test-Startup 'read-tray'
     # The administrator explicitly resolves the conflict to the saved baseline.
     Restore-ValidationBaseline $baseline
     & $powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path (Current-Directory) 'Manage-Quad9Installation.ps1') -Operation Repair
@@ -216,6 +245,11 @@ try {
     Run-Setup $uninstaller '/S'
     Assert-Baseline
     if ((Get-Service Quad9Connect -ErrorAction SilentlyContinue) -or (State).installed -or (Get-LocalGroup Quad9ConnectOperators -ErrorAction SilentlyContinue)) { throw 'Safe uninstall left installed resources or operator enrollment.' }
+    $startupScheduler = New-Object -ComObject 'Schedule.Service'
+    $startupScheduler.Connect()
+    if (@($startupScheduler.GetFolder('\').GetTasks(1) | Where-Object Name -ceq ("Quad9Connect.Startup." + $user.SID.Value)).Count) { throw 'Safe uninstall left the enrolled user startup task.' }
+    $runnerSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    if (@($startupScheduler.GetFolder('\').GetTasks(1) | Where-Object Name -ceq ("Quad9Connect.Startup." + $runnerSid)).Count) { throw 'Safe uninstall left the native UI user startup task.' }
     if (-not (Test-Path -LiteralPath (Join-Path $data 'dns.journal.json'))) { throw 'Uninstall discarded the audit and recovery journal.' }
     foreach ($name in @('startup-events.v1.json', 'startup-events.v1.json.tmp', 'startup-events.v1.lock')) {
         if (Test-Path -LiteralPath (Join-Path $data $name)) { throw 'Safe uninstall retained an operational log file.' }
