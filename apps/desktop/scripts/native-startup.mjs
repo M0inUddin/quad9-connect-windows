@@ -8,16 +8,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { version, cpus, totalmem } from "node:os";
 import { expect } from "@playwright/test";
 import { freePort, connect } from "./native-session.mjs";
+import { startupOptions } from "./startup-options.mjs";
 
 if (process.platform !== "win32" || !process.argv[2])
   throw new Error("Pass a built Windows desktop executable.");
-const executable = resolve(process.argv[2]);
-const runs = Number(process.argv[3] ?? 5);
-if (!Number.isInteger(runs) || runs < 1 || runs > 100)
-  throw new Error("Run count must be between 1 and 100.");
-const output = resolve(
-  process.argv[4] ?? "../../output/playwright/native-startup",
-);
+const options = startupOptions(process.argv.slice(2));
+const executable = resolve(options.executable);
+const runs = options.runs;
+const output = resolve(options.output);
 await mkdir(output, { recursive: true });
 const report = {
   schema: 1,
@@ -30,7 +28,7 @@ const report = {
   executable_sha256: createHash("sha256")
     .update(await readFile(executable))
     .digest("hex"),
-  require_service: process.argv.includes("--require-service"),
+  require_service: options.requireService,
   startup_target_pass: null,
   runs: [],
 };
