@@ -1,9 +1,10 @@
-//! Read-only IP interface, address, route, DNS, and policy notifications.
+//! Read-only IP, DNS, policy, and suspend/resume notifications.
 //!
 //! Callbacks only advance an observation generation and coalesce a wakeup. They
 //! never inspect adapters, perform IPC, or write DNS. Registry subscriptions
 //! watch configuration changes independently of the IP notification callbacks.
 
+mod power;
 mod registry;
 
 use crate::NativeError;
@@ -89,6 +90,7 @@ pub struct NetworkWatcher {
     signal: Option<Arc<Signal>>,
     receiver: Receiver<()>,
     registry: Option<registry::RegistryWatcher>,
+    power: Option<power::PowerWatcher>,
 }
 
 impl NetworkWatcher {
@@ -109,6 +111,7 @@ impl NetworkWatcher {
             signal: Some(signal.clone()),
             receiver,
             registry: None,
+            power: None,
         };
         for kind in 0..3 {
             let mut handle = ptr::null_mut();
@@ -148,6 +151,7 @@ impl NetworkWatcher {
             watcher.registrations.push(handle);
         }
         watcher.registry = Some(registry::RegistryWatcher::start(signal.clone())?);
+        watcher.power = Some(power::PowerWatcher::start(signal.clone())?);
         // Reconcile state read before or during registration. Registry events
         // cannot report changes that preceded their individual subscriptions.
         signal.mark();
@@ -164,6 +168,8 @@ impl NetworkWatcher {
 
 impl Drop for NetworkWatcher {
     fn drop(&mut self) {
+        // Remove the power callback's signal before releasing other contexts.
+        self.power.take();
         // Stop and drain registry work before releasing the shared context.
         self.registry.take();
         let mut drained = true;
