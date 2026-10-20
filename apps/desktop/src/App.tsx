@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -219,9 +213,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
   }, [prefs]);
-  // Start asynchronous subscriptions during commit so their IPC can overlap
-  // the first paint. The hook itself does not wait for native work.
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!isTauri()) return;
     handshakeReady.current = false;
     const unlisten = listen<string>("navigate", (event) => {

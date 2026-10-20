@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "date": "2026-10-20",
-  "purpose": "Authenticated startup phase baseline before first-paint initialization experiment",
+  "purpose": "Authenticated startup phase baseline before listener scheduling experiment",
   "host": {
     "operating_system": "Windows 11 Pro",
     "build": "10.0.26300",

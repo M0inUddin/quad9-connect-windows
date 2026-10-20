@@ -173,9 +173,31 @@ A clean release MSVC build with the profiler completed [20 authenticated phase o
 
 These are separate distributions; they must not be added. The configured-window interval includes event-loop startup and WebView creation, and does not isolate browser or renderer creation. Request intervals include scheduling and coordinator waits. The overall endpoint includes CDP observation. Different accounts, builds, and times prevent a causal comparison with earlier batches. All release-budget decisions remain unassessed for this instrumented diagnostic.
 
-The native setup and status timings do not support removing readiness checks. An experiment starts asynchronous frontend subscriptions in React's commit phase so their registration can overlap the first paint. Initialization keeps its existing effect and cleanup ordering. It still waits for native subscriptions, frontend listeners, the document handshake, and a current complete status/adapter pair. The subscription hook returns without waiting for native work; the loading interface and settings must stay responsive. This changes scheduling and requires measurement before any speed-improvement claim.
+The native setup and status timings do not support removing readiness checks. A later experiment moved only asynchronous native subscription registration into React's commit phase. Initialization kept its existing effect and cleanup ordering. It still waited for native subscriptions, frontend listeners, the document handshake, and a current complete status/adapter pair. The comparison below found no clear gain, so the scheduling change was reverted. A regression test retains coverage for theme changes and settings navigation while the first service read is pending.
 
 Safe uninstall preserved the exact native DNS baseline. Independent cleanup checks confirmed removal of the service, operator group, temporary account, installation, active data directory, and uninstall registration. Private test data remains in a protected archive. This batch does not qualify foreground resources, sleep/resume, VPN interference, reference hardware, or manual assistive technology.
+
+## Listener scheduling experiment
+
+The [counterbalanced A/B record](validation/windows11-26300-startup-ab.json) compares 20 launches of the existing interface with 20 launches of the subscription scheduling experiment on this same Windows installation. Each adjacent pair contained one of each candidate, with pair order alternating BA, AB. Every launch used a fresh WebView profile and standard-user token under the same temporary installer-enrolled account. Both clients used the same installed service with DNS management off. Both release MSVC artifacts came from clean source trees; their exact hashes and source comparisons are recorded.
+
+| Startup interval | Existing median | Experiment median | Existing p95 | Experiment p95 | Median paired difference, experiment minus existing |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Process creation to ready observation | 2,493 ms | 2,440 ms | 3,424 ms | 3,119 ms | +0.515 ms |
+| Listener wait after startup effect | 30.5 ms | 29.9 ms | 45.2 ms | 35.0 ms | +0.350 ms |
+
+The difference between group medians does not establish a speed improvement. Adjacent paired differences were approximately zero for both intervals. The experiment was reverted, leaving the existing runtime ordering and its readiness checks intact. All forty observations remain in the record. All forty post-endpoint snapshots were visible but inactive, with the Low memory hint. These instrumented measurements include CDP observation and leave startup qualification unassessed; both observed p95 values exceed three seconds. They do not establish foreground startup performance or a comparison with earlier account/time batches.
+
+The final experimental client remained open for simultaneous LocalSystem service and desktop counters. CDP was disconnected before each settled interval. These observations identify that experimental binary; its later scheduling revert does not retroactively qualify the final source.
+
+| Interval | Seconds after 30 seconds settling | CPU, percent of one logical CPU | Combined peak working set | Service peak | Foreground samples |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Window | 300.53 | 0.7851% | 224.82 MiB | 11.13 MiB | 17 of 109 |
+| Tray | 300.78 | 0.0675% | 38.21 MiB | 10.74 MiB | Not required |
+
+The window was in front when the sampler started its settling delay, but was already inactive at the first counter sample. All window budget decisions remain unassessed. Six WebView processes remained at every window snapshot. The tray passed all three applicable candidate limits and had no WebView descendants at any sample. These results leave full foreground qualification open. No further focus retry was requested in this session.
+
+Safe uninstall preserved the exact native DNS baseline. Independent cleanup checks confirmed removal of the temporary account, service, operator group, installation, active data directory, and uninstall registration. Private test data remains in an archive with administrator-only write access. The [native screenshot](screenshots/README.md#native-startup-scheduling-experiment) identifies the experimental client's authenticated off state. This development-host run does not establish sleep/resume, physical handoff, VPN, manual assistive-technology, or reference-hardware qualification.
 
 ## WebView runtime CPU diagnostic
 

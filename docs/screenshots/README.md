@@ -2,6 +2,12 @@
 
 Native captures show the packaged Tauri app with embedded assets and real Rust IPC on Windows 11 Pro, build 10.0.26300. Browser captures show labeled sample states in Edge at 480 logical pixels wide. Playwright captures settled states after the corresponding interaction. Browser preview fixtures cannot activate in a production build.
 
+## Native startup scheduling experiment
+
+This capture identifies the experimental `0b5352d` MSVC release client from [PR #22](https://github.com/M0inUddin/quad9-connect-windows/pull/22). A fresh installer-enrolled standard-user token reached the authenticated off state alongside the LocalSystem service. The [A/B record](../validation/windows11-26300-startup-ab.json) identifies the exact binary and measurement scope. The experiment showed no clear startup gain and its listener scheduling change was reverted. This image does not identify the final source or qualify foreground performance.
+
+![Experimental native client during startup validation, with authenticated service and DNS management off](native-startup-ab.png)
+
 ## Native release after startup refresh fixes
 
 This capture uses the packaged MSVC candidate from [PR #19](https://github.com/M0inUddin/quad9-connect-windows/pull/19), a fresh standard-user token enrolled by the real installer, and authenticated Rust IPC. DNS management is off and no adapters are selected. The [startup and resource record](../validation/windows11-26300-startup-window-resources.json) identifies its hashes and measurement scope.
