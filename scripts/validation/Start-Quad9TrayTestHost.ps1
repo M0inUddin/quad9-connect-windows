@@ -6,7 +6,11 @@ $ErrorActionPreference = 'Stop'
 Add-Type -Path (Join-Path $PSScriptRoot 'ResourceJob.cs')
 Add-Type -Path (Join-Path $PSScriptRoot 'TrayStartupProbe.cs')
 $errorPath = if ($env:QUAD9_TRAY_DIAGNOSTICS) { Join-Path (Split-Path $env:QUAD9_TRAY_DIAGNOSTICS -Parent) 'native-host.log' } else { $null }
-$owner = [Quad9ResourceJob]::new([IO.Path]::GetFullPath($Executable), '--start-in-tray', $JobName, $errorPath)
+$owner = if ($errorPath) {
+    [Quad9ResourceJob]::new([IO.Path]::GetFullPath($Executable), '--start-in-tray', $JobName, $errorPath)
+} else {
+    [Quad9ResourceJob]::new([IO.Path]::GetFullPath($Executable), '--start-in-tray', $JobName)
+}
 try {
     $native = [Diagnostics.Process]::GetProcessById($owner.ProcessId)
     try {
@@ -95,7 +99,7 @@ try {
                         }
                     }
                 }
-                @{ processes = $processes; listeners = $listeners; debugging_policies = $policies; main_window = $native.MainWindowTitle; elevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } |
+                @{ processes = $processes; listeners = $listeners; debugging_policies = $policies; main_window = $native.MainWindowTitle; main_window_responding = $native.Responding; elevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } |
                     ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $env:QUAD9_TRAY_DIAGNOSTICS -Encoding UTF8
             } catch { Write-Warning "Could not collect owned-process diagnostics: $_" }
         }

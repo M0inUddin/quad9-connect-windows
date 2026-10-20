@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Read-only native lifecycle check, isolated profile, and owned process job.
+// Tray lifecycle and optional installed-startup checks in an owned process job.
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -33,8 +33,7 @@ if (
   );
 await mkdir(output, { recursive: true });
 const profile = await mkdtemp(join(output, "profile-"));
-const runtimeAssignedPort =
-  installedStartup || process.argv.includes("--runtime-debug-port");
+const runtimeAssignedPort = process.argv.includes("--runtime-debug-port");
 const requestedPort = runtimeAssignedPort ? 0 : await freePort();
 const report = {
   schema: 1,
@@ -80,7 +79,9 @@ const launcher = spawn(
       ...process.env,
       WEBVIEW2_USER_DATA_FOLDER: profile,
       QUAD9_TRAY_DIAGNOSTICS: join(output, "native-processes.json"),
-      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${requestedPort} --remote-debugging-address=127.0.0.1 --enable-logging --v=1 --log-file="${join(output, "webview.log")}"`,
+      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: installedStartup
+        ? "--force-renderer-accessibility"
+        : `--remote-debugging-port=${requestedPort} --remote-debugging-address=127.0.0.1 --enable-logging --log-file="${join(output, "webview.log")}"`,
     },
   },
 );
@@ -124,138 +125,169 @@ try {
     });
   });
   report.hidden_launch = ready;
-  const session = await reopen(executable, port, {
-    get exitCode() {
-      return launcher.exitCode;
-    },
-  });
-  browser = session.browser;
-  const page = session.page;
-  await expect(page.getByRole("status")).toHaveText(
-    installedStartup ? "Ready when you are" : "Service unavailable",
-  );
-  if (!installedStartup) {
+  if (installedStartup) {
+    await launchSecond(executable);
+    report.native_startup_ui = await new Promise((ok, reject) => {
+      const worker = spawn(
+        "powershell.exe",
+        [
+          "-Mta",
+          "-NoProfile",
+          "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          resolve("../../scripts/validation/Test-NativeStartupUi.ps1"),
+          "-DesktopProcessId",
+          String(ready.pid),
+          "-Executable",
+          executable,
+          "-Output",
+          output,
+        ],
+        { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] },
+      );
+      let result = "",
+        errors = "";
+      const timer = setTimeout(() => {
+        worker.kill();
+        reject(
+          new Error("Native accessibility UI worker exceeded three minutes."),
+        );
+      }, 180000);
+      worker.stdout.on("data", (part) => {
+        result = (result + part).slice(-65536);
+      });
+      worker.stderr.on("data", (part) => {
+        errors = (errors + part).slice(-16384);
+      });
+      worker.once("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      worker.once("close", (code) => {
+        clearTimeout(timer);
+        if (code !== 0) {
+          reject(
+            new Error(
+              `Native accessibility UI worker exited ${code}: ${errors}`,
+            ),
+          );
+          return;
+        }
+        try {
+          ok(JSON.parse(result));
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    expect(report.native_startup_ui).toMatchObject({
+      passed: true,
+      driver: "Windows UI Automation",
+      mode: "tray",
+      pending_save_navigation: true,
+      repeated_tray_launch: true,
+      window_recreation: true,
+      actual_task_readback: true,
+    });
+    report.passed = true;
+    console.log(
+      "Installed startup UI passed through Windows accessibility controls and actual task readback.",
+    );
+  } else {
+    const session = await reopen(executable, port, {
+      get exitCode() {
+        return launcher.exitCode;
+      },
+    });
+    browser = session.browser;
+    const page = session.page;
+    await expect(page.getByRole("status")).toHaveText("Service unavailable");
     await expect(
       page.getByRole("button", { name: "Enable Quad9" }),
     ).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Reconnect to service", exact: true }),
     ).toBeVisible();
-  }
-  report.probe_negative_control = await new Promise((ok, reject) => {
-    const lines = createInterface({ input: launcher.stdout });
-    const timer = setTimeout(() => {
-      lines.close();
-      reject(new Error("Open-window probe timed out."));
-    }, 10000);
-    lines.once("line", (line) => {
-      clearTimeout(timer);
-      lines.close();
-      try {
-        ok(JSON.parse(line));
-      } catch (error) {
-        reject(error);
-      }
+    report.probe_negative_control = await new Promise((ok, reject) => {
+      const lines = createInterface({ input: launcher.stdout });
+      const timer = setTimeout(() => {
+        lines.close();
+        reject(new Error("Open-window probe timed out."));
+      }, 10000);
+      lines.once("line", (line) => {
+        clearTimeout(timer);
+        lines.close();
+        try {
+          ok(JSON.parse(line));
+        } catch (error) {
+          reject(error);
+        }
+      });
+      launcher.stdin.write("check-open\n");
     });
-    launcher.stdin.write("check-open\n");
-  });
-  expect(report.probe_negative_control).toEqual({
-    application_window_detected: true,
-    child_processes_detected: true,
-  });
-  const native = await page.evaluate(async () => ({
-    timeline: await window.__TAURI_INTERNALS__.invoke("startup_timeline"),
-    monitor_error: await window.__TAURI_INTERNALS__.invoke(
-      "network_monitor_error",
-    ),
-  }));
-  expect(native.monitor_error).toBeNull();
-  for (const name of [
-    "tray_ready",
-    "monitor_ready",
-    "run_ready",
-    "status_started",
-    "status_finished",
-  ])
-    expect(native.timeline.phases_ms[name], name).not.toBeNull();
-  // The read completed while there was no document to request it. On opening,
-  // the frontend still performs a fresh read through the same coordinator.
-  expect(
-    native.timeline.main_entered_unix_ms +
+    expect(report.probe_negative_control).toEqual({
+      application_window_detected: true,
+      child_processes_detected: true,
+    });
+    const native = await page.evaluate(async () => ({
+      timeline: await window.__TAURI_INTERNALS__.invoke("startup_timeline"),
+      monitor_error: await window.__TAURI_INTERNALS__.invoke(
+        "network_monitor_error",
+      ),
+    }));
+    expect(native.monitor_error).toBeNull();
+    for (const name of [
+      "tray_ready",
+      "monitor_ready",
+      "run_ready",
+      "status_started",
+      "status_finished",
+    ])
+      expect(native.timeline.phases_ms[name], name).not.toBeNull();
+    // The read completed while there was no document to request it. On opening,
+    // the frontend still performs a fresh read through the same coordinator.
+    expect(
+      native.timeline.main_entered_unix_ms +
+        native.timeline.phases_ms.status_finished,
+    ).toBeLessThanOrEqual(ready.tray_checked_unix_ms);
+    expect(native.timeline.phases_ms.navigation_started).toBeGreaterThan(
       native.timeline.phases_ms.status_finished,
-  ).toBeLessThanOrEqual(ready.tray_checked_unix_ms);
-  expect(native.timeline.phases_ms.navigation_started).toBeGreaterThan(
-    native.timeline.phases_ms.status_finished,
-  );
-  report.native = native;
-  await expect(
-    page.getByRole("note", { name: "Closing and quitting Quad9" }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await page.getByRole("radio", { name: "Dark", exact: true }).check();
-  if (installedStartup) {
-    const group = page.getByRole("group", {
-      name: "Start Quad9 when signing in to Windows",
-    });
+    );
+    report.native = native;
     await expect(
-      group.getByRole("radio", { name: "Off", exact: true }),
-    ).toBeChecked({ timeout: 20000 });
-    for (const mode of ["Tray", "Open window", "Off", "Tray"]) {
-      await group.getByRole("radio", { name: mode, exact: true }).check();
-      if (mode === "Tray" && !report.pending_save_navigation_checked) {
-        await page
-          .getByRole("button", { name: "Connection", exact: true })
-          .click();
-        await page
-          .getByRole("button", { name: "Settings", exact: true })
-          .click();
-        report.pending_save_navigation_checked = true;
-      }
-      await expect(
-        group.getByRole("radio", { name: mode, exact: true }),
-      ).toBeEnabled();
-      await expect(
-        group.getByRole("radio", { name: mode, exact: true }),
-      ).toBeChecked();
-    }
-    await page.screenshot({
-      path: join(output, "native-windows-startup.png"),
-      fullPage: true,
-    });
-    report.native_startup_preference_flow = true;
-  }
-  await launchSecond(executable, ["--start-in-tray"]);
-  await expect(
-    page.getByRole("heading", { name: "Settings", exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("radio", { name: "Dark", exact: true }),
-  ).toBeChecked();
-  report.repeated_tray_launch_preserved_visible_settings = true;
-  await closeWindow(page);
-  const reopened = await reopen(executable, port, {
-    get exitCode() {
-      return launcher.exitCode;
-    },
-  });
-  browser = reopened.browser;
-  await reopened.page
-    .getByRole("button", { name: "Settings", exact: true })
-    .click();
-  await expect(
-    reopened.page.getByRole("radio", { name: "Dark", exact: true }),
-  ).toBeChecked();
-  if (installedStartup)
+      page.getByRole("note", { name: "Closing and quitting Quad9" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.getByRole("radio", { name: "Dark", exact: true }).check();
+    await launchSecond(executable, ["--start-in-tray"]);
     await expect(
-      reopened.page
-        .getByRole("group", { name: "Start Quad9 when signing in to Windows" })
-        .getByRole("radio", { name: "Tray", exact: true }),
+      page.getByRole("heading", { name: "Settings", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("radio", { name: "Dark", exact: true }),
     ).toBeChecked();
-  report.open_close_reopen_preserved_preferences = true;
-  report.passed = true;
-  console.log(
-    "Tray startup passed: no initial WebView, read-only status, repeated tray launch, normal activation, and close/reopen.",
-  );
+    report.repeated_tray_launch_preserved_visible_settings = true;
+    await closeWindow(page);
+    const reopened = await reopen(executable, port, {
+      get exitCode() {
+        return launcher.exitCode;
+      },
+    });
+    browser = reopened.browser;
+    await reopened.page
+      .getByRole("button", { name: "Settings", exact: true })
+      .click();
+    await expect(
+      reopened.page.getByRole("radio", { name: "Dark", exact: true }),
+    ).toBeChecked();
+    report.open_close_reopen_preserved_preferences = true;
+    report.passed = true;
+    console.log(
+      "Tray startup passed: no initial WebView, read-only status, repeated tray launch, normal activation, and close/reopen.",
+    );
+  }
 } finally {
   report.runtime_debugging_port = await readFile(activePortFile, "utf8").catch(
     () => null,

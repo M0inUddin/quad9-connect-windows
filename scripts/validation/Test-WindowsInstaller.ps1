@@ -127,11 +127,16 @@ try {
         (Join-Path (Current-Directory) 'quad9-desktop.exe'), $nativeOutput
     $nativeUser = Start-Process -FilePath $powershell -ArgumentList $nativeArguments -Credential $credential -LoadUserProfile -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $output 'native-startup.out') -RedirectStandardError (Join-Path $output 'native-startup.err')
     try {
-        if ($nativeUser.ExitCode -ne 0) {
+        $nativeStartupPassed = $nativeUser.ExitCode -eq 0
+        if (-not $nativeStartupPassed) {
             Get-Content -LiteralPath (Join-Path $output 'native-startup.err') | Write-Host
-            throw 'Installed native UI Windows startup validation failed.'
+            Write-Warning 'Installed native UI startup validation failed. The suite will still exercise upgrade and cleanup, then fail overall.'
         }
     } finally { $nativeUser.Dispose() }
+    # Reestablish the independent lifecycle fixture after a failed UI check.
+    # The failed UI result still fails the complete suite after safe cleanup.
+    if (-not $nativeStartupPassed) { Test-Startup 'tray' }
+    Test-Startup 'read-tray'
     # A second user's task exercises installer updates and removal across users.
     $startupModule = Import-Module (Join-Path (Current-Directory) 'InstallerLifecycle.psm1') -Force -PassThru
     & $startupModule { param($Desktop); $null = Invoke-Quad9StartupPreference $Desktop -Mode window -Write } (Join-Path (Current-Directory) 'quad9-desktop.exe')
@@ -280,6 +285,11 @@ try {
     if (-not @(Get-ChildItem -LiteralPath (Join-Path $root 'retained-removal') -Filter external-note.txt -Recurse -File).Count) { throw 'Reinstall lost retained unrelated files.' }
     Run-Setup (Join-Path (Current-Directory) 'Uninstall.exe') '/S'
     Assert-Baseline
+    if (-not $nativeStartupPassed) {
+        @{ result = 'failed'; native_startup_ui = $false; remaining_lifecycle_checks = $true } | ConvertTo-Json |
+            Set-Content -LiteralPath (Join-Path $output 'installer-validation.json')
+        throw 'Installed native UI startup validation failed; the remaining installer lifecycle checks completed.'
+    }
     [ordered]@{ result = 'passed'; first_install_dns_unchanged = $true; open_interface_preserved = $true; standard_user_authorization = $true; maintenance_gate = $true; partial_staging_recovered = $true; active_upgrade = $true; failed_upgrade_rollback = $true; interrupted_upgrade = $true; missing_candidate_ui_recovered = $true; conflict_blocks_uninstall = $true; quiet_uninstall_exit_code = $true; administrator_repair = $true; uninstall_restores_dns = $true; reinstall = $true; os_build = [Environment]::OSVersion.Version.Build } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'installer-validation.json')
     Write-Output 'Real NSIS installer lifecycle passed on this disposable VM.'
 } finally {
