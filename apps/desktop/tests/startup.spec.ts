@@ -138,11 +138,25 @@ test("startup coalesces focus and network events and waits for a current result"
   await release(page, 0);
   await calls(page, ["get_status", "get_status"]);
   await expect(page.getByRole("status")).toHaveText("Reading service state");
+  expect(
+    await page.evaluate(
+      () =>
+        performance.getEntriesByName("quad9-startup-settled", "mark").length,
+    ),
+  ).toBe(0);
   await release(page, 1);
   await calls(page, ["get_status", "get_status", "list_adapters"]);
   await expect(page.getByRole("status")).toHaveText("Reading service state");
   await release(page, 2);
   await expect(page.getByRole("status")).toHaveText("Ready when you are");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          performance.getEntriesByName("quad9-startup-settled", "mark").length,
+      ),
+    )
+    .toBe(1);
 });
 
 test("a network event during adapter inspection requires a complete fresh read", async ({

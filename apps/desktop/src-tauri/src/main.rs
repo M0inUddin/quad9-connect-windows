@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod startup;
 use quad9_service::client::{ClientCoordinator, ObservedResponse};
 use quad9_service::protocol::{Command, Request, Response, ResultBody};
+use startup::{Phase, StartupTimeline};
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
     Arc, Condvar, Mutex,
@@ -323,6 +325,13 @@ async fn observed_service_request(
     app: tauri::AppHandle,
     request: Request,
 ) -> Result<ObservedResponse, String> {
+    let timeline = app.state::<StartupTimeline>().inner().clone();
+    let span = match request.command {
+        Command::GetStatus => Some((Phase::StatusStarted, Phase::StatusFinished)),
+        Command::ListAdapters => Some((Phase::AdaptersStarted, Phase::AdaptersFinished)),
+        _ => None,
+    }
+    .filter(|(start, _)| timeline.mark(*start));
     let requests = app.state::<Host>().requests.clone();
     let status_request = matches!(request.command, Command::GetStatus);
     let result = tauri::async_runtime::spawn_blocking(move || {
@@ -331,6 +340,9 @@ async fn observed_service_request(
     .await
     .map_err(|e| e.to_string())
     .and_then(|result| result);
+    if let Some((_, end)) = span {
+        timeline.mark(end);
+    }
     match &result {
         Ok(observed)
             if status_request && !matches!(observed.response.result, ResultBody::Status { .. }) =>
@@ -356,6 +368,7 @@ fn interface_context(
     window: tauri::Window,
     new_document: Option<bool>,
 ) -> InterfaceContext {
+    app.state::<StartupTimeline>().mark(Phase::InterfaceContext);
     let host = app.state::<Host>();
     if new_document == Some(true) && is_current_window(&app, &window) {
         host.document_id.fetch_add(1, Ordering::AcqRel);
@@ -554,8 +567,15 @@ fn show_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     }
     Ok(())
 }
+#[tauri::command]
+fn startup_timeline(app: tauri::AppHandle) -> startup::Snapshot {
+    app.state::<StartupTimeline>().snapshot()
+}
+
 fn main() {
-    tauri::Builder::default()
+    let timeline = StartupTimeline::new();
+    let app = tauri::Builder::default()
+        .manage(timeline.clone())
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             show(app, "connection")
         }))
@@ -564,9 +584,21 @@ fn main() {
             network_monitor_error,
             interface_context,
             interface_memory_target,
+            startup_timeline,
             retain_interface
         ])
+        .on_page_load(|webview, payload| {
+            if webview.label() == "main" {
+                webview
+                    .state::<StartupTimeline>()
+                    .mark(match payload.event() {
+                        tauri::webview::PageLoadEvent::Started => Phase::NavigationStarted,
+                        tauri::webview::PageLoadEvent::Finished => Phase::NavigationFinished,
+                    });
+            }
+        })
         .setup(|app| {
+            app.state::<StartupTimeline>().mark(Phase::SetupEntered);
             let title = MenuItem::new(app, "Quad9 Connect for Windows", false, None::<&str>)?;
             let status = MenuItem::new(app, "Reading service state", false, None::<&str>)?;
             let separator = PredefinedMenuItem::separator(app)?;
@@ -667,7 +699,10 @@ fn main() {
                     _ => {}
                 })
                 .build(app)?;
+            app.state::<StartupTimeline>().mark(Phase::TrayReady);
             observe_network(app.handle().clone())?;
+            app.state::<StartupTimeline>().mark(Phase::MonitorReady);
+            app.state::<StartupTimeline>().mark(Phase::SetupFinished);
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -682,8 +717,12 @@ fn main() {
             }
         })
         .build(tauri::generate_context!())
-        .expect("Could not start Quad9 Connect")
-        .run(|app, event| {
+        .expect("Could not start Quad9 Connect");
+    timeline.mark(Phase::BuilderReady);
+    app.run(|app, event| {
+            if matches!(event, tauri::RunEvent::Ready) {
+                app.state::<StartupTimeline>().mark(Phase::RunReady);
+            }
             if matches!(&event, tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::Destroyed, .. } if label == "main") {
                 let host = app.state::<Host>();
                 let (generation, changed) = &*host.destroyed;

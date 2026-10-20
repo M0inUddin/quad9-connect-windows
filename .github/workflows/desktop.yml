@@ -27,6 +27,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run build
       - run: npm test
+      - run: node --test scripts/startup-options.test.mjs
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -59,6 +60,9 @@ jobs:
       - name: Exercise the actual native window and Rust IPC without a service
         working-directory: apps/desktop
         run: node scripts/native-smoke.mjs src-tauri/target/debug/quad9-desktop.exe
+      - name: Check native and document startup phase collection
+        working-directory: apps/desktop
+        run: node scripts/native-startup.mjs src-tauri/target/debug/quad9-desktop.exe 1
       - name: Validate native accessibility and tray window recreation
         working-directory: apps/desktop
         run: node scripts/native-validation.mjs src-tauri/target/debug/quad9-desktop.exe
@@ -92,4 +96,5 @@ jobs:
             output/playwright/native-validation/*.json
             output/playwright/native-validation/*.png
             output/playwright/native-resources/*.json
+            output/playwright/native-startup/*.json
           retention-days: 7

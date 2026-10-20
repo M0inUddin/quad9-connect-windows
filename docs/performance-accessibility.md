@@ -147,6 +147,8 @@ Safe uninstall preserved the exact native DNS baseline and removed the service, 
 
 ## Packaged startup after refresh fixes
 
+The [startup phase profiler](startup-profiling.md) separates native setup, monitor registration, host service requests, and document initialization for subsequent investigations. Its instrumented diagnostics do not qualify resource or startup budgets.
+
 The clean MSVC candidate from [PR #19](https://github.com/M0inUddin/quad9-connect-windows/pull/19) completed 20 authenticated fresh-profile launches at a 4.056-second p95 on the same development host. All launches reached "Ready when you are" with DNS management off and WebView2 155.0.4283.62. Each launch recorded the expected two frontend service requests. In the p95 observation, the document's [Performance.timeOrigin](https://www.w3.org/TR/hr-time-2/#sec-time-origin) was 2.640 seconds after native process creation. This marks a document timing origin and does not isolate renderer process creation. Service inspection, rendering, and CDP observation fall within the remaining interval.
 
 Startup still misses the three-second target. The earlier 3.344-second baseline and this run used separate temporary accounts and occurred at different times, without a controlled interleaved comparison. They establish no causal speed improvement or regression. The fix removes competing reads after invalidation and prevents premature completion; it does not optimize WebView2 creation. Normal OS caches and background applications remained in place. Both runs exclude the secondary-logon/bootstrap interval and include CDP observation.
