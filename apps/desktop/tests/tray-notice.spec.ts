@@ -72,16 +72,11 @@ test("blocked notice storage still permits dismissal for the current document", 
   page,
 }) => {
   await page.addInitScript(() => {
-    for (const method of ["getItem", "setItem"] as const) {
-      const original = Storage.prototype[method];
-      Object.defineProperty(Storage.prototype, method, {
-        value(this: Storage, key: string, value?: string) {
-          if (key === "quad9-tray-notice-v1")
-            throw new DOMException("Blocked", "SecurityError");
-          return original.call(this, key, value!);
-        },
-      });
-    }
+    Object.defineProperty(window, "localStorage", {
+      get() {
+        throw new DOMException("Blocked", "SecurityError");
+      },
+    });
   });
   await page.goto("/?preview=off");
   const notice = page.getByRole("note", { name: noticeName });
@@ -89,6 +84,8 @@ test("blocked notice storage still permits dismissal for the current document", 
   await notice.getByRole("button", { name: "Got it", exact: true }).click();
   await expect(notice).toHaveCount(0);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("radio", { name: "Dark", exact: true }).check();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect(notice).toHaveCount(0);
   await page.reload();
   await expect(notice).toBeVisible();

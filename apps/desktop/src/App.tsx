@@ -100,7 +100,10 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   const [view, setView] = useState<View>("connection");
   const [status, setStatus] = useState<Status | null>(null);
   const [adapters, setAdapters] = useState<Adapter[]>([]);
-  const [prefs, setPrefs] = useState(() => loadPreferences(localStorage));
+  // Access the storage getter inside the loader's guard; it can throw too.
+  const [prefs, setPrefs] = useState(() =>
+    loadPreferences({ getItem: (key) => localStorage.getItem(key) }),
+  );
   const [trayNoticeDismissed, setTrayNoticeDismissed] = useState(() => {
     try {
       return localStorage.getItem(TRAY_NOTICE_KEY) === "dismissed";
