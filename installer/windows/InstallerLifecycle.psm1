@@ -320,7 +320,7 @@ function Invoke-Quad9StartupPreference([string] $Executable,
                 $task = $scheduler.Folder.RegisterTaskDefinition($name, $definition, $flags, $sid, $null, 3, $permissions)
             }
         }
-        $actual = if ($task -and $task.Enabled) { Get-StartupTaskMode $task $paths } else { 'off' }
+        $actual = if ($task -and $task.Enabled -and $task.Definition.Triggers.Item(1).Enabled) { Get-StartupTaskMode $task $paths } else { 'off' }
         if (-not $actual) { throw 'Windows returned an unexpected Quad9 startup task. Read the setting again before retrying.' }
         return @{ available = $true; mode = $actual; message = $null }
     } finally { $lock.Dispose() }

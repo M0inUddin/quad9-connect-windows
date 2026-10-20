@@ -76,8 +76,22 @@ try {
         $task = $scheduler.Folder.GetTask($name)
         if ($task.Enabled -or $task.Definition.Actions.Item(1).Path -ine $newDesktop -or $task.Definition.Actions.Item(1).Arguments -cne '--start-in-tray') { throw 'Upgrade lost the disabled state, mode, or new path.' }
         if ((Invoke-Quad9StartupPreference $desktop).available) { throw 'An obsolete executable can change startup.' }
+        $definition = $task.Definition
+        $definition.Settings.Enabled = $true
+        $definition.Triggers.Item(1).Enabled = $false
+        $null = $scheduler.Folder.RegisterTaskDefinition($name, $definition, 4, $sid, $null, 3)
+        if (-not $scheduler.Folder.GetTask($name).Enabled -or (Invoke-Quad9StartupPreference $newDesktop).mode -ne 'off') { throw 'An enabled task with a disabled logon trigger was reported as active.' }
+        $state.current = $manifests[0].id
+        Write-AtomicJson 'installation.json' $state
+        Sync-Quad9StartupTasks $state
+        if ($scheduler.Folder.GetTask($name).Definition.Triggers.Item(1).Enabled -or (Invoke-Quad9StartupPreference $desktop).mode -ne 'off') { throw 'Rollback enabled a disabled logon trigger.' }
+        $state.current = $manifests[1].id
+        Write-AtomicJson 'installation.json' $state
+        Sync-Quad9StartupTasks $state
+        if ($scheduler.Folder.GetTask($name).Definition.Triggers.Item(1).Enabled -or (Invoke-Quad9StartupPreference $newDesktop).mode -ne 'off') { throw 'Upgrade enabled a disabled logon trigger.' }
         $updated = Invoke-Quad9StartupPreference $newDesktop -Mode window -Write
         if ($updated.mode -ne 'window') { throw "User could not change startup after its task was updated: $($updated | ConvertTo-Json -Compress); enabled=$($scheduler.Folder.GetTask($name).Enabled); args='$($scheduler.Folder.GetTask($name).Definition.Actions.Item(1).Arguments)'" }
+        if (-not $scheduler.Folder.GetTask($name).Definition.Triggers.Item(1).Enabled) { throw 'Choosing a startup mode did not enable its logon trigger.' }
         $held = [IO.File]::Open((Join-Path $Fixture 'installation.lock'), 'Open', 'ReadWrite', 'None')
         try { Must-Fail { Invoke-Quad9StartupPreference $newDesktop -Mode off -Write } }
         finally { $held.Dispose() }
@@ -100,7 +114,7 @@ try {
         if ((Invoke-Quad9StartupPreference $desktop -Mode tray -Write).mode -ne 'tray') { throw 'Re-registration failed.' }
         if ((Invoke-Quad9StartupPreference $desktop -Mode off -Write).mode -ne 'off' -or (Find-StartupTask $scheduler.Folder $name)) { throw 'Off did not remove the task.' }
     } $fixture $prefix
-    Write-Output 'Windows startup passed: default off, least privilege, real current-user launch, tray/window/off, disabled state, upgrade/rollback, lock exclusion, foreign-task preservation, and removal.'
+    Write-Output 'Windows startup passed: default off, least privilege, real current-user launch, tray/window/off, disabled task/trigger states, upgrade/rollback, lock exclusion, foreign-task preservation, and removal.'
 } finally {
     $scheduler = New-Object -ComObject 'Schedule.Service'
     $scheduler.Connect()
