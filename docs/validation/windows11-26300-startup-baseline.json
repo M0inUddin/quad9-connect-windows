@@ -33,6 +33,7 @@
     "end": "Node high-resolution epoch clock when CDP observes the authenticated settled live region.",
     "profiles": "20 new desktop processes, each with a fresh WebView profile; same temporary user and normal OS caches.",
     "p95": "Nearest rank, nineteenth of twenty ordered observations.",
+    "document_time_origin": "Legacy renderer_origin_ms observations record the document's Performance.timeOrigin relative to native process creation; they do not time OS renderer-process creation.",
     "observation": "Includes CDP attachment/observation overhead; no compilation or browser regression suite during the run.",
     "privacy": "Raw DNS, accounts, SIDs, local paths, profiles, and recovery records excluded."
   },

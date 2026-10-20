@@ -1,0 +1,233 @@
+{
+  "schema": 1,
+  "date_utc": "2026-10-20",
+  "build": {
+    "type": "Unsigned release MSVC, x86_64-pc-windows-msvc",
+    "clean_source_commit": "ead08be7025e44e74e8412b42c11086783891f20",
+    "source_tree": "990c3eb05a5777d716ed739b8487c43a8dfb64a9",
+    "merged_commit": "4a56da979e15722293531f07d0aa1df50db3bfab",
+    "source_dirty": false,
+    "artifact_run": "https://github.com/M0inUddin/quad9-connect-windows/actions/runs/39365142909",
+    "installer_sha256": "47971235b5dd86d8f4c6b27a47e2d4ef558efd667af69891e5e741ad35f12327",
+    "desktop_sha256": "24199cec01034bdc51fd3b05d5e60966e6369fd05234bbde9323da52721bc7e5",
+    "service_sha256": "2fa6abef424a488809d62a4ab6a5d00a5e7c6467a1a90895c7fd9ba6ae691186",
+    "scope": "PR19 startup refresh coalescing, bounded retries, and atomic initialization handoff."
+  },
+  "host": {
+    "windows_version": "10.0.26300",
+    "processor": "13th Gen Intel Core i7-1370P",
+    "logical_processors": 20,
+    "installed_ram_gib": 32,
+    "webview2_versions": ["155.0.4283.62"],
+    "reference_machine": false,
+    "power_scheme_snapshot_after_startup": "Balanced; policy unchanged."
+  },
+  "authorization": {
+    "account": "Temporary standard local account enrolled by the real installer; new secondary-logon tokens for startup, with the last desktop retained for resource sampling.",
+    "connection_state": "Ready when you are",
+    "management": "Off, no journal or recovery block",
+    "account_disabled_after_twentieth_launch": true,
+    "credentials": "Generated only in memory, never serialized."
+  },
+  "method": {
+    "startup": "Windows native process creation until CDP observes the settled authenticated live region; includes observation overhead and excludes credential/PowerShell bootstrap startup. Twenty fresh WebView profiles with normal OS caches.",
+    "p95": "Nearest rank, nineteenth of twenty ordered observations.",
+    "document_time_origin": "Performance.timeOrigin relative to native process creation; this is a document timing origin, not an OS renderer-process creation timestamp.",
+    "pre_sampling": "The final twentieth-launch profile remained open during an approximately eight-minute foreground wait, followed by thirty seconds of sampler settling.",
+    "resources": "Cumulative desktop job CPU, including exited descendants, plus simultaneous LocalSystem service counters. Working sets count shared resident pages in every mapping. CDP clients disconnected before settling.",
+    "foreground": "Every sampled foreground PID must match the desktop; unsampled transitions are not established. Sampler holds a scoped display/system execution request when foreground sampling runs, then releases it.",
+    "privacy": "Raw DNS snapshots, account/SIDs, profiles, paths, process IDs, recovery records, and traces stay outside Git."
+  },
+  "startup": {
+    "count": 20,
+    "p95_ms": 4056.014,
+    "target_ms": 3000,
+    "target_pass": false,
+    "observations": [
+      {
+        "run": 1,
+        "observed_ms": 3424.165,
+        "document_time_origin_ms": 2273.3,
+        "service_requests": 2
+      },
+      {
+        "run": 2,
+        "observed_ms": 5575.453,
+        "document_time_origin_ms": 3818.6,
+        "service_requests": 2
+      },
+      {
+        "run": 3,
+        "observed_ms": 3315.123,
+        "document_time_origin_ms": 2401.5,
+        "service_requests": 2
+      },
+      {
+        "run": 4,
+        "observed_ms": 2951.985,
+        "document_time_origin_ms": 2201.3,
+        "service_requests": 2
+      },
+      {
+        "run": 5,
+        "observed_ms": 3165.342,
+        "document_time_origin_ms": 2230,
+        "service_requests": 2
+      },
+      {
+        "run": 6,
+        "observed_ms": 3688.275,
+        "document_time_origin_ms": 2330,
+        "service_requests": 2
+      },
+      {
+        "run": 7,
+        "observed_ms": 2822.535,
+        "document_time_origin_ms": 1745,
+        "service_requests": 2
+      },
+      {
+        "run": 8,
+        "observed_ms": 3606.836,
+        "document_time_origin_ms": 2449.6,
+        "service_requests": 2
+      },
+      {
+        "run": 9,
+        "observed_ms": 2887.169,
+        "document_time_origin_ms": 1806.1,
+        "service_requests": 2
+      },
+      {
+        "run": 10,
+        "observed_ms": 2760.024,
+        "document_time_origin_ms": 1805.8,
+        "service_requests": 2
+      },
+      {
+        "run": 11,
+        "observed_ms": 3846.847,
+        "document_time_origin_ms": 2379.8,
+        "service_requests": 2
+      },
+      {
+        "run": 12,
+        "observed_ms": 2499.831,
+        "document_time_origin_ms": 1655.6,
+        "service_requests": 2
+      },
+      {
+        "run": 13,
+        "observed_ms": 2657.731,
+        "document_time_origin_ms": 1576.1,
+        "service_requests": 2
+      },
+      {
+        "run": 14,
+        "observed_ms": 2699.802,
+        "document_time_origin_ms": 1917.6,
+        "service_requests": 2
+      },
+      {
+        "run": 15,
+        "observed_ms": 3049.508,
+        "document_time_origin_ms": 1898.2,
+        "service_requests": 2
+      },
+      {
+        "run": 16,
+        "observed_ms": 2230.093,
+        "document_time_origin_ms": 1379.2,
+        "service_requests": 2
+      },
+      {
+        "run": 17,
+        "observed_ms": 2370.931,
+        "document_time_origin_ms": 1336.6,
+        "service_requests": 2
+      },
+      {
+        "run": 18,
+        "observed_ms": 2313.975,
+        "document_time_origin_ms": 1482.5,
+        "service_requests": 2
+      },
+      {
+        "run": 19,
+        "observed_ms": 4056.014,
+        "document_time_origin_ms": 2640.1,
+        "service_requests": 2
+      },
+      {
+        "run": 20,
+        "observed_ms": 2966.608,
+        "document_time_origin_ms": 1805.2,
+        "service_requests": 2
+      }
+    ]
+  },
+  "window": {
+    "measured_seconds": 301.9563329,
+    "settle_seconds": 30,
+    "complete_process_set": true,
+    "cpu_measurement_complete": true,
+    "cpu_accounting": "Windows job totals include exited desktop descendants; separate service counters when supplied.",
+    "process_exits_observed": false,
+    "sampler_display_awake_requested": true,
+    "cpu_percent_one_logical_core": 0.43984008788444257,
+    "maximum_working_set_mib": 212.51953125,
+    "average_working_set_mib": 132.80257310779817,
+    "maximum_service_working_set_mib": 11.19140625,
+    "foreground_required": true,
+    "host_foreground_throughout": false,
+    "samples": 109,
+    "foreground_samples": 17,
+    "first_non_foreground_seconds": 48.3110571,
+    "last_foreground_seconds": 45.5360708,
+    "minimum_webviews": 6,
+    "maximum_webviews": 6,
+    "combined_cpu_target_pass": null,
+    "combined_memory_target_pass": null,
+    "service_memory_target_pass": null
+  },
+  "window_deferred": false,
+  "tray": {
+    "measured_seconds": 301.5415569,
+    "settle_seconds": 30,
+    "complete_process_set": true,
+    "cpu_measurement_complete": true,
+    "cpu_accounting": "Windows job totals include exited desktop descendants; separate service counters when supplied.",
+    "process_exits_observed": false,
+    "sampler_display_awake_requested": false,
+    "cpu_percent_one_logical_core": 0.0518170701266947,
+    "maximum_working_set_mib": 37.93359375,
+    "average_working_set_mib": 37.908241421568626,
+    "maximum_service_working_set_mib": 10.79296875,
+    "foreground_required": false,
+    "host_foreground_throughout": false,
+    "samples": 102,
+    "foreground_samples": 0,
+    "first_non_foreground_seconds": null,
+    "last_foreground_seconds": null,
+    "minimum_webviews": 0,
+    "maximum_webviews": 0,
+    "combined_cpu_target_pass": true,
+    "combined_memory_target_pass": true,
+    "service_memory_target_pass": true
+  },
+  "cleanup": {
+    "native_dns_unchanged": true,
+    "safe_uninstall_passed": true,
+    "service_removed": true,
+    "operator_group_removed": true,
+    "temporary_account_removed": true,
+    "installation_removed": true,
+    "uninstall_registration_removed": true,
+    "private_test_data_archived_with_administrator_only_write_access": true
+  },
+  "limitations": [
+    "Development host exceeds the four-logical-CPU/8-GiB reference configuration.",
+    "Separate benchmark runs do not establish a causal speed improvement or regression. Startup remains above target.",
+    "No supported release or completion of the remaining Windows/accessibility matrix is implied."
+  ]
+}
