@@ -74,6 +74,9 @@ try {
       );
       if (run !== runs - 1) continue;
 
+      const trayNotice = () => page.getByRole("note", { name: "Closing and quitting Quad9" });
+      await expect(trayNotice()).toBeVisible();
+
       await page.locator("body").click({ position: { x: 2, y: 2 } });
       await page.keyboard.press("Tab");
       await expect(
@@ -163,6 +166,10 @@ try {
         path: join(output, "native-settings-dark.png"),
         fullPage: true,
       });
+      await trayNotice().getByRole("button", { name: "Got it", exact: true }).focus();
+      await page.keyboard.press("Enter");
+      await expect(trayNotice()).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeFocused();
 
       // Reloading preserves the native window but creates a new document. Its
       // first retention sequence must work, and the old document cannot release it.
@@ -175,6 +182,7 @@ try {
       });
       await page.reload();
       await expect(page.getByRole("status")).toHaveText(/Service unavailable|Ready when you are/);
+      await expect(trayNotice()).toHaveCount(0);
       const currentDocument = await page.evaluate(async () => {
         const context = await window.__TAURI_INTERNALS__.invoke("interface_context");
         await window.__TAURI_INTERNALS__.invoke("retain_interface", {
@@ -282,6 +290,7 @@ try {
       await browser.close();
       ({ browser, page } = await reopen(executable, port, child));
       await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+      await expect(trayNotice()).toHaveCount(0);
       expect(
         await page.evaluate(() => window.quad9RetentionMarker),
       ).toBeUndefined();
@@ -297,6 +306,7 @@ try {
         idle_window_destroyed: true,
         single_instance_reopen: true,
         preferences_preserved: true,
+        tray_notice_dismissal_preserved: true,
       };
       // Post the busy reservation and close without waiting for the first
       // response. A title-bar close must not overtake accepted retention.

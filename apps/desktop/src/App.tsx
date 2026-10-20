@@ -22,6 +22,7 @@ import type {
 } from "./protocol";
 
 type View = "connection" | "diagnostics" | "settings";
+const TRAY_NOTICE_KEY = "quad9-tray-notice-v1";
 type MonitorFailure = { generation: number; message: string };
 type TrayResult = { Ok: Response } | { Err: string };
 type InterfaceContext = {
@@ -100,6 +101,14 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [adapters, setAdapters] = useState<Adapter[]>([]);
   const [prefs, setPrefs] = useState(() => loadPreferences(localStorage));
+  const [trayNoticeDismissed, setTrayNoticeDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(TRAY_NOTICE_KEY) === "dismissed";
+    } catch {
+      return false;
+    }
+  });
+  const contentHeading = useRef<HTMLHeadingElement>(null);
   const [busy, setBusy] = useState<string | null>("Reading service state");
   const [error, setError] = useState<string | null>(null);
   const [monitorUnavailable, setMonitorUnavailable] = useState(false);
@@ -550,6 +559,32 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         ))}
       </nav>
       <main id="main-content">
+        {!trayNoticeDismissed && (isTauri() || preview) && (
+          <aside
+            className="tray-notice"
+            role="note"
+            aria-label="Closing and quitting Quad9"
+          >
+            <p>
+              Closing keeps Quad9 in the tray. Quit interface leaves DNS
+              unchanged. Use restore to stop DNS management.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setTrayNoticeDismissed(true);
+                try {
+                  localStorage.setItem(TRAY_NOTICE_KEY, "dismissed");
+                } catch {
+                  /* Keep dismissal for this document when storage is blocked. */
+                }
+                contentHeading.current?.focus({ preventScroll: true });
+              }}
+            >
+              Got it
+            </button>
+          </aside>
+        )}
         {monitorUnavailable && (
           <div className="error-box" role="alert">
             <Icon name="alert" />
@@ -604,7 +639,9 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
                       ? "CONNECTION NEEDED"
                       : "REVIEW REQUIRED"}
               </span>
-              <h2 id="state-heading">{copy[state][0]}</h2>
+              <h2 id="state-heading" ref={contentHeading} tabIndex={-1}>
+                {copy[state][0]}
+              </h2>
               <p>{copy[state][1]}</p>
             </section>
             <section
@@ -695,7 +732,9 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         {view === "diagnostics" && (
           <section className="secondary-view">
             <span className="eyebrow">CHECK THE CURRENT PATH</span>
-            <h2>Diagnostics</h2>
+            <h2 ref={contentHeading} tabIndex={-1}>
+              Diagnostics
+            </h2>
             <p className="intro">
               Check the Windows system resolver and direct Quad9 reachability.
             </p>
@@ -803,7 +842,9 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         {view === "settings" && (
           <section className="secondary-view">
             <span className="eyebrow">MAKE IT YOURS</span>
-            <h2>Settings</h2>
+            <h2 ref={contentHeading} tabIndex={-1}>
+              Settings
+            </h2>
             <h3 className="section-label">Appearance</h3>
             <fieldset className="theme-picker">
               <legend className="sr-only">Color theme</legend>
