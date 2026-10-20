@@ -168,6 +168,9 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   const invalidate = useCallback(() => {
     const epoch = ++observationEpoch.current;
     setProbe(null);
+    // Startup owns its reads until a complete status/adapter pair survives
+    // invalidation. Focus and network bursts must not start competing reads.
+    if (initializing.current) return;
     if (lock.current) {
       refreshPending.current = true;
       return;
@@ -302,6 +305,19 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
 
   useEffect(() => {
     let alive = true;
+    const refreshInitialState = async () => {
+      while (alive) {
+        const epoch = observationEpoch.current;
+        try {
+          await refresh();
+        } catch (error) {
+          // A network event can also obsolete a failed connection attempt.
+          // Only a failure from the current observation should end startup.
+          if (epoch === observationEpoch.current) throw error;
+        }
+        if (epoch === observationEpoch.current) return;
+      }
+    };
     (async () => {
       if (isTauri()) {
         await nativeListenersReady.current;
@@ -321,11 +337,11 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
             if (pending?.tray_result) acceptTrayResult(pending.tray_result);
             if (pending?.diagnostic_pending) diagnosticQueued.current = true;
           }
-          await refresh();
+          await refreshInitialState();
           return;
         }
       }
-      await refresh();
+      await refreshInitialState();
     })()
       .catch((e) => {
         if (alive) {
