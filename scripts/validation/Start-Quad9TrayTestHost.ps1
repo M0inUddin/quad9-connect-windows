@@ -80,7 +80,9 @@ try {
                 })
                 $native.Refresh()
                 $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
-                @{ processes = $processes; main_window = $native.MainWindowTitle; elevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } |
+                $listeners = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+                    Where-Object { $_.OwningProcess -in $counters.ProcessIds } | Select-Object LocalAddress, LocalPort, OwningProcess)
+                @{ processes = $processes; listeners = $listeners; main_window = $native.MainWindowTitle; elevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } |
                     ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $env:QUAD9_TRAY_DIAGNOSTICS -Encoding UTF8
             } catch { Write-Warning "Could not collect owned-process diagnostics: $_" }
         }

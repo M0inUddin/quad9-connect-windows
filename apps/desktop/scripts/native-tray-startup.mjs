@@ -33,7 +33,19 @@ if (
   );
 await mkdir(output, { recursive: true });
 const profile = await mkdtemp(join(output, "profile-"));
-const port = await freePort();
+const portOption = process.argv.find((argument) =>
+  argument.startsWith("--debug-port="),
+);
+const port = portOption
+  ? Number(portOption.slice("--debug-port=".length))
+  : await freePort();
+if (
+  portOption &&
+  (!installedStartup || !Number.isInteger(port) || port < 1024 || port > 65535)
+)
+  throw new Error(
+    "An explicit debugging port requires the hosted installed-startup test and a valid port.",
+  );
 const report = {
   schema: 1,
   passed: false,
@@ -66,7 +78,7 @@ const launcher = spawn(
       ...process.env,
       WEBVIEW2_USER_DATA_FOLDER: profile,
       QUAD9_TRAY_DIAGNOSTICS: join(output, "native-processes.json"),
-      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port} --remote-debugging-address=127.0.0.1`,
+      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port} --remote-debugging-address=127.0.0.1 --enable-logging --log-file="${join(output, "webview.log")}"`,
     },
   },
 );
