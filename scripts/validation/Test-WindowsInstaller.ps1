@@ -114,11 +114,27 @@ try {
     Assert-Baseline
     Test-Startup 'read-off'
     Test-Startup 'tray'
-    Push-Location (Join-Path $repo 'apps/desktop')
+    Test-Startup 'off'
+    $nativeOutput = Join-Path $output 'native-startup'
+    New-Item -ItemType Directory -Path $nativeOutput -Force | Out-Null
+    # Only this report/profile folder is user-writable. Installed payloads,
+    # executable test sources, and service data keep their existing permissions.
+    $nativeAcl = Get-Acl -LiteralPath $nativeOutput
+    $nativeAcl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($user.SID, 'Modify', 'ContainerInherit, ObjectInherit', 'None', 'Allow'))
+    Set-Acl -LiteralPath $nativeOutput -AclObject $nativeAcl
+    $nativeArguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Node "{1}" -Desktop "{2}" -Output "{3}"' -f
+        (Join-Path $PSScriptRoot 'Invoke-NativeStartupTest.ps1'), (Get-Command node).Source,
+        (Join-Path (Current-Directory) 'quad9-desktop.exe'), $nativeOutput
+    $nativeUser = Start-Process -FilePath $powershell -ArgumentList $nativeArguments -Credential $credential -LoadUserProfile -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $output 'native-startup.out') -RedirectStandardError (Join-Path $output 'native-startup.err')
     try {
-        & node scripts/native-tray-startup.mjs (Join-Path (Current-Directory) 'quad9-desktop.exe') (Join-Path $output 'native-startup') --installed-startup
-        if ($LASTEXITCODE -ne 0) { throw 'Installed native UI Windows startup validation failed.' }
-    } finally { Pop-Location }
+        if ($nativeUser.ExitCode -ne 0) {
+            Get-Content -LiteralPath (Join-Path $output 'native-startup.err') | Write-Host
+            throw 'Installed native UI Windows startup validation failed.'
+        }
+    } finally { $nativeUser.Dispose() }
+    # A second user's task exercises installer updates and removal across users.
+    $startupModule = Import-Module (Join-Path (Current-Directory) 'InstallerLifecycle.psm1') -Force -PassThru
+    & $startupModule { param($Desktop); $null = Invoke-Quad9StartupPreference $Desktop -Mode window -Write } (Join-Path (Current-Directory) 'quad9-desktop.exe')
     Assert-Baseline
     $status = Request @{ type = 'get_status' }
     if ($status.result.revision -ne 0 -or $null -ne $status.result.journal) { throw 'Windows startup preferences changed DNS management.' }
