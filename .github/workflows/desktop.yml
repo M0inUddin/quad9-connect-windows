@@ -59,6 +59,9 @@ jobs:
       - name: Exercise the actual native window and Rust IPC without a service
         working-directory: apps/desktop
         run: node scripts/native-smoke.mjs src-tauri/target/debug/quad9-desktop.exe
+      - name: Check native and document startup phase collection
+        working-directory: apps/desktop
+        run: node scripts/native-startup.mjs src-tauri/target/debug/quad9-desktop.exe 1
       - name: Validate native accessibility and tray window recreation
         working-directory: apps/desktop
         run: node scripts/native-validation.mjs src-tauri/target/debug/quad9-desktop.exe
@@ -92,4 +95,5 @@ jobs:
             output/playwright/native-validation/*.json
             output/playwright/native-validation/*.png
             output/playwright/native-resources/*.json
+            output/playwright/native-startup/*.json
           retention-days: 7

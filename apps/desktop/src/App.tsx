@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { markStartup } from "./startup";
 import {
   connectionState,
   eligibleTargets,
@@ -305,14 +306,17 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
 
   useEffect(() => {
     let alive = true;
+    markStartup("effect");
     (async () => {
       try {
         if (isTauri()) {
           await nativeListenersReady.current;
+          markStartup("listeners");
           if (!alive) return;
           const context = await invoke<InterfaceContext>("interface_context", {
             newDocument: true,
           });
+          markStartup("context");
           if (context) {
             documentId.current = context.document_id;
             if (!navigationPending.current) setView(context.view);
@@ -366,6 +370,10 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
       alive = false;
     };
   }, [refresh]);
+
+  useEffect(() => {
+    if (!initializing.current && busy === null) markStartup("settled");
+  }, [busy]);
 
   function acceptTrayResult(result: TrayResult) {
     if ("Err" in result) setError(result.Err);

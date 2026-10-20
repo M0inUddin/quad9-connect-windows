@@ -24,6 +24,8 @@ Adapter inspection excludes the complete Windows IPv6 discovery-default list `fe
 
 ## Validation
 
+A read-only [startup phase profiler](startup-profiling.md) records fixed process-local native timestamps and document marks. CI checks collection and startup races. It does not change startup ordering or establish a performance improvement; the three-second startup and full foreground resource gates remain open.
+
 Deterministic Rust tests cover transaction boundaries, external edits, missing adapters, unavailable storage, malformed requests, stale revisions, and retries after restart. Windows GNU builds and tests run locally. CI also uses Windows MSVC and Linux.
 
 The `Native DNS contract in disposable VMs` workflow uses fresh Windows Server 2022 and 2025 machines. It checks IPv4 and IPv6 strict DoH writes and exact restoration of automatic settings, ordered static servers, and existing DoH properties. The service portion installs a real LocalSystem service and runs clients under separate standard-user tokens. The `vm-validation` feature permits the hosted VM's virtual Ethernet adapter only in an explicitly selected development entry point.
