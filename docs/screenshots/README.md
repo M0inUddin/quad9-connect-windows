@@ -1,6 +1,14 @@
 # Desktop UI screenshots
 
-Native captures show the packaged Tauri app with embedded assets and real Rust IPC on Windows 11 Pro, build 10.0.26300. Browser captures show labeled sample states in Edge at 480 logical pixels wide. Playwright captures settled states after the corresponding interaction. Browser preview fixtures cannot activate in a production build.
+Native captures show the packaged Tauri app with embedded assets and real Rust IPC on Windows 11 Pro, build 10.0.26300. Browser captures show labeled sample states at 480 logical pixels wide. The first-use examples use Chrome; earlier browser examples use Edge. Playwright captures settled states after the corresponding interaction. Browser preview fixtures cannot activate in a production build.
+
+## First-use tray guidance, browser fixture
+
+These Chrome captures show the first-use explanation in both themes. DNS and adapter values are sample data. Dismissal preserves existing theme and adapter choices, and native validation checks that it survives document reload and native window recreation.
+
+![First-use tray explanation in the light theme, with a sample off state](tray-notice-light.png)
+
+![First-use tray explanation in the dark theme, with a sample selected adapter](tray-notice-dark.png)
 
 ## Native startup scheduling experiment
 

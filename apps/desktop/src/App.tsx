@@ -22,6 +22,7 @@ import type {
 } from "./protocol";
 
 type View = "connection" | "diagnostics" | "settings";
+const TRAY_NOTICE_KEY = "quad9-tray-notice-v1";
 type MonitorFailure = { generation: number; message: string };
 type TrayResult = { Ok: Response } | { Err: string };
 type InterfaceContext = {
@@ -99,7 +100,18 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   const [view, setView] = useState<View>("connection");
   const [status, setStatus] = useState<Status | null>(null);
   const [adapters, setAdapters] = useState<Adapter[]>([]);
-  const [prefs, setPrefs] = useState(() => loadPreferences(localStorage));
+  // Access the storage getter inside the loader's guard; it can throw too.
+  const [prefs, setPrefs] = useState(() =>
+    loadPreferences({ getItem: (key) => localStorage.getItem(key) }),
+  );
+  const [trayNoticeDismissed, setTrayNoticeDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(TRAY_NOTICE_KEY) === "dismissed";
+    } catch {
+      return false;
+    }
+  });
+  const currentNavigation = useRef<HTMLButtonElement>(null);
   const [busy, setBusy] = useState<string | null>("Reading service state");
   const [error, setError] = useState<string | null>(null);
   const [monitorUnavailable, setMonitorUnavailable] = useState(false);
@@ -541,6 +553,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         {(["connection", "diagnostics", "settings"] as View[]).map((item) => (
           <button
             key={item}
+            ref={view === item ? currentNavigation : undefined}
             aria-current={view === item ? "page" : undefined}
             onClick={() => setView(item)}
           >
@@ -550,6 +563,32 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         ))}
       </nav>
       <main id="main-content">
+        {!trayNoticeDismissed && (isTauri() || preview) && (
+          <aside
+            className="tray-notice"
+            role="note"
+            aria-label="Closing and quitting Quad9"
+          >
+            <p>
+              Closing keeps Quad9 in the tray. Quit interface leaves DNS
+              unchanged. Use restore to stop DNS management.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setTrayNoticeDismissed(true);
+                try {
+                  localStorage.setItem(TRAY_NOTICE_KEY, "dismissed");
+                } catch {
+                  /* Keep dismissal for this document when storage is blocked. */
+                }
+                currentNavigation.current?.focus({ preventScroll: true });
+              }}
+            >
+              Got it
+            </button>
+          </aside>
+        )}
         {monitorUnavailable && (
           <div className="error-box" role="alert">
             <Icon name="alert" />
