@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod launch;
 mod startup;
+mod windows_startup;
 use launch::LaunchMode;
 use quad9_service::client::{ClientCoordinator, ObservedResponse};
 use quad9_service::protocol::{Command, Request, Response, ResultBody};
@@ -574,6 +575,15 @@ fn startup_timeline(app: tauri::AppHandle) -> startup::Snapshot {
     app.state::<StartupTimeline>().snapshot()
 }
 
+#[tauri::command]
+async fn windows_startup(
+    mode: Option<windows_startup::Mode>,
+) -> Result<windows_startup::Preference, String> {
+    tauri::async_runtime::spawn_blocking(move || windows_startup::preference(mode))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
 fn main() {
     let timeline = StartupTimeline::new();
     let launch = LaunchMode::parse(std::env::args_os().skip(1)).unwrap_or_else(|usage| {
@@ -599,6 +609,7 @@ fn main() {
             interface_context,
             interface_memory_target,
             startup_timeline,
+            windows_startup,
             retain_interface
         ])
         .on_page_load(|webview, payload| {

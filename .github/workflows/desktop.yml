@@ -2,10 +2,10 @@ name: Desktop UI
 
 on:
   pull_request:
-    paths: ['apps/desktop/**', 'crates/**', 'scripts/validation/Measure-Quad9Resources.ps1', 'scripts/validation/*Resource*', 'scripts/validation/*Tray*', '.github/workflows/desktop.yml']
+    paths: ['apps/desktop/**', 'crates/**', 'installer/windows/InstallerLifecycle.psm1', 'scripts/validation/*Startup*', 'scripts/validation/Measure-Quad9Resources.ps1', 'scripts/validation/*Resource*', 'scripts/validation/*Tray*', '.github/workflows/desktop.yml']
   push:
     branches: [main]
-    paths: ['apps/desktop/**', 'crates/**', 'scripts/validation/Measure-Quad9Resources.ps1', 'scripts/validation/*Resource*', 'scripts/validation/*Tray*', '.github/workflows/desktop.yml']
+    paths: ['apps/desktop/**', 'crates/**', 'installer/windows/InstallerLifecycle.psm1', 'scripts/validation/*Startup*', 'scripts/validation/Measure-Quad9Resources.ps1', 'scripts/validation/*Resource*', 'scripts/validation/*Tray*', '.github/workflows/desktop.yml']
 
 permissions:
   contents: read
@@ -57,6 +57,12 @@ jobs:
       - run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --features custom-protocol --locked
       - name: Check native startup diagnostic retention
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --features custom-protocol --locked
+      - name: Check per-user Windows startup tasks under both PowerShell editions
+        run: |
+          foreach ($validationShell in @('powershell.exe', 'pwsh.exe')) {
+            & $validationShell -NoProfile -File scripts/validation/Test-WindowsStartup.ps1
+            if ($LASTEXITCODE -ne 0) { throw "Windows startup regression failed under $validationShell" }
+          }
       - name: Exercise the actual native window and Rust IPC without a service
         working-directory: apps/desktop
         run: node scripts/native-smoke.mjs src-tauri/target/debug/quad9-desktop.exe

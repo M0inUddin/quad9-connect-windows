@@ -5,7 +5,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Add-Type -Path (Join-Path $PSScriptRoot 'ResourceJob.cs')
 Add-Type -Path (Join-Path $PSScriptRoot 'TrayStartupProbe.cs')
-$owner = [Quad9ResourceJob]::new([IO.Path]::GetFullPath($Executable), '--start-in-tray', $JobName)
+$errorPath = if ($env:QUAD9_TRAY_DIAGNOSTICS) { Join-Path (Split-Path $env:QUAD9_TRAY_DIAGNOSTICS -Parent) 'native-host.log' } else { $null }
+$owner = if ($errorPath) {
+    [Quad9ResourceJob]::new([IO.Path]::GetFullPath($Executable), '--start-in-tray', $JobName, $errorPath)
+} else {
+    [Quad9ResourceJob]::new([IO.Path]::GetFullPath($Executable), '--start-in-tray', $JobName)
+}
 try {
     $native = [Diagnostics.Process]::GetProcessById($owner.ProcessId)
     try {
@@ -70,5 +75,34 @@ try {
             [Console]::Out.WriteLine('{"application_window_detected":true,"child_processes_detected":true}')
             [Console]::ReadLine() | Out-Null
         }
-    } finally { $native.Dispose() }
+    } finally {
+        if ($env:QUAD9_TRAY_DIAGNOSTICS) {
+            try {
+                $counters = [Quad9ResourceJob]::Read($JobName)
+                $processes = @(foreach ($memberId in $counters.ProcessIds) {
+                    Get-CimInstance Win32_Process -Filter "ProcessId=$memberId" | Select-Object ProcessId, ParentProcessId, Name, CommandLine, SessionId
+                })
+                $native.Refresh()
+                $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
+                $listeners = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+                    Where-Object { $_.OwningProcess -in $counters.ProcessIds } | Select-Object LocalAddress, LocalPort, OwningProcess)
+                $policies = @{}
+                foreach ($hive in @([Microsoft.Win32.Registry]::LocalMachine, [Microsoft.Win32.Registry]::CurrentUser)) {
+                    foreach ($path in @('Software\Policies\Microsoft\Edge', 'Software\Policies\Microsoft\Edge\WebView2')) {
+                        $key = $hive.OpenSubKey($path)
+                        if ($key) {
+                            try {
+                                foreach ($value in @('RemoteDebuggingAllowed', 'DeveloperToolsAvailability')) {
+                                    $policies["$($hive.Name)\$path\$value"] = $key.GetValue($value)
+                                }
+                            } finally { $key.Dispose() }
+                        }
+                    }
+                }
+                @{ processes = $processes; listeners = $listeners; debugging_policies = $policies; main_window = $native.MainWindowTitle; main_window_responding = $native.Responding; elevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } |
+                    ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $env:QUAD9_TRAY_DIAGNOSTICS -Encoding UTF8
+            } catch { Write-Warning "Could not collect owned-process diagnostics: $_" }
+        }
+        $native.Dispose()
+    }
 } finally { $owner.Dispose() }

@@ -54,6 +54,14 @@ This earlier native smoke capture used an absent service. The client displays it
 
 ![Explicit adapter selection and themes](settings-dark.png)
 
+## Windows startup settings, browser fixture
+
+These Chrome captures show the implemented Off, Open window, and Tray choices with the visible preview label. They use sample service data and do not register Windows tasks or change DNS. Off is the initial preference. Native installed-app validation is recorded separately by the installer workflow.
+
+![Windows startup options in the light theme](windows-startup-light.png)
+
+![Windows startup options in the dark theme](windows-startup-dark.png)
+
 ## Browser fixture, diagnostics in the dark theme
 
 ![One system-resolver diagnostic result](diagnostics-dark.png)

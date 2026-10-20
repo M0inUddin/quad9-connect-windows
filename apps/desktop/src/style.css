@@ -555,6 +555,28 @@ footer {
   color: var(--muted);
   margin: 0 0 12px;
 }
+.startup-settings {
+  margin-bottom: 20px;
+}
+.startup-settings[aria-busy="true"] {
+  cursor: progress;
+}
+.startup-settings .field-note[aria-live] {
+  margin-top: 8px;
+}
+.startup-error {
+  font-size: 12px;
+  color: var(--text);
+}
+.startup-error button {
+  min-height: 32px;
+  border: 1px solid var(--line);
+  padding: 5px 10px;
+  border-radius: 4px;
+}
+.theme-picker:disabled {
+  opacity: 0.65;
+}
 .adapter-list {
   border: 1px solid var(--line);
   border-radius: 7px;
