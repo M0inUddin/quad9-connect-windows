@@ -1,12 +1,20 @@
 # Network observation in the development client
 
-The desktop process subscribes to Windows IP interface, unicast address, and route changes for both address families, plus DNS configuration and policy registry changes. A notification invalidates the previous resolver diagnostic and triggers a fresh, read-only service status and adapter read. The native tray also reads status after the notification burst settles. These events never enable Quad9, restore DNS, or replace the journal.
+The desktop process subscribes to Windows IP interface, unicast address, and route changes for both address families, plus DNS configuration, policy registry, and suspend/resume notifications. A notification invalidates the previous resolver diagnostic and triggers a fresh, read-only service status and adapter read. The native tray also reads status after the notification burst settles. These events never enable Quad9, restore DNS, or replace the journal.
 
 The native callback advances an observation generation and sends a coalesced wakeup through a channel with capacity one. It does no adapter inspection or IPC. The observer waits for notifications and combines bursts after 250 milliseconds of quiet, with a two-second limit. It does not continuously poll adapters or run resolver probes.
 
 Status and diagnostic reads that span a network generation change are rejected. The client coordinator captures the generation after acquiring the request gate, so a queued diagnostic carries the generation it actually observed. The webview tracks invalidation while a request is running and queues a replacement read if an event invalidates the final post-action refresh. A late diagnostic result cannot republish the old observation. Tray diagnostic events carry their generation to handle delayed delivery. The exact identity of an uncertain mutation remains available for an explicit Retry.
 
 The native subscriptions are owned by the observer thread. Cancellation runs outside the callback, without holding a lock the callback needs. If Windows cannot confirm cancellation, the small callback context is retained rather than freeing memory that a callback might still access. See Microsoft's documentation for [IP interface notifications](https://learn.microsoft.com/en-us/windows/win32/api/netioapi/nf-netioapi-notifyipinterfacechange), [address notifications](https://learn.microsoft.com/en-us/windows/win32/api/netioapi/nf-netioapi-notifyunicastipaddresschange), and [cancellation](https://learn.microsoft.com/en-us/windows/win32/api/netioapi/nf-netioapi-cancelmibchangenotify2).
+
+## Suspend and resume
+
+An observer without power notifications could retain an old diagnostic across sleep when adapter configuration and foreground ownership did not change. The desktop now uses [PowerRegisterSuspendResumeNotification](https://learn.microsoft.com/en-us/windows/win32/api/powerbase/nf-powerbase-powerregistersuspendresumenotification) to invalidate observations on suspend, automatic resume, and user resume. These events use the same generation, coalescing, and replacement-read path as IP and registry changes. No focus transition or address change is required. A registration failure follows the existing persistent monitor-failure path.
+
+The callback receives an opaque, never-reused ID. A process-local table holds its signal only while the subscription is active. Removal waits for an in-flight callback's bounded mark operation and removes the ID before unregistering. Late callbacks then find no signal and never dereference released application state. The callback descriptor remains allocated until unregister returns successfully; a failed unregister retains that small descriptor with an inactive ID. This does not rely on undocumented callback-drain behavior.
+
+Windows tests register and unregister the real API, invoke the production callback for each power event without changing system power state, check burst coalescing and unknown events, and race callbacks against cancellation. They establish the notification path and lifetime behavior. Actual sleep/resume, Modern Standby timing, and physical network recovery remain acceptance work.
 
 ## DNS configuration notifications
 
@@ -23,7 +31,7 @@ Each one-shot registration watches values, subtree names, and security changes. 
 
 Shutdown signals a stop event and joins the registry thread before closing its keys and events. Startup or runtime registration failures invalidate old evidence and leave a persistent notice in the interface. A manual check can still return a fresh scoped result, but it cannot clear the notice. Quitting and relaunching the app retries registration. Closing its window only hides it in the tray. No DNS query names or registry values are collected by this observer.
 
-Desktop setup waits until subscriptions are armed or their startup failure has been saved before exposing the webview. Successful registration advances the generation and queues a status reconciliation, so the tray and any reads begun during registration cannot retain earlier evidence. This closes the gap before registry notifications begin, since they cannot report earlier edits. Both live and saved failure reports include their native generation, so a delayed tray diagnostic from before the failure cannot republish old evidence.
+Desktop setup waits until subscriptions are armed or their startup failure has been saved. Successful registration advances the generation and queues a status reconciliation, so the tray and any reads begun during registration cannot retain earlier evidence. This closes the gap before registry notifications begin, since they cannot report earlier edits. Both live and saved failure reports include their native generation, so a delayed tray diagnostic from before the failure cannot republish old evidence.
 
 ## Validation and limits
 

@@ -72,6 +72,13 @@ try {
   await page
     .getByRole("heading", { name: "Service unavailable", exact: true })
     .waitFor();
+  const monitorFailure = await page.evaluate(() =>
+    window.__TAURI_INTERNALS__.invoke("network_monitor_error"),
+  );
+  if (monitorFailure !== null)
+    throw new Error(
+      `Native network/power notification registration failed: ${JSON.stringify(monitorFailure)}`,
+    );
   const details = await page.getByRole("alert").textContent();
   if (!details.includes("WaitNamedPipeW failed with Windows error"))
     throw new Error(`The real Rust pipe client was not reached: ${details}`);
