@@ -159,6 +159,24 @@ Foreground held for only 17 of 109 samples. The first non-foreground sample occu
 
 The simultaneous tray interval passed all three applicable limits over 301.54 seconds after 30 seconds of settling. It observed 0.0518% of one logical CPU, 37.93 MiB combined peak working set, and a 10.79 MiB service peak, with zero WebView descendants at every sample. Safe uninstall preserved the exact native DNS baseline and removed the service, operator group, temporary account, installation, and uninstall registration. Private test data was archived with administrator-only write access. Startup and full foreground qualification remain open on this candidate, along with the reference-machine and remaining acceptance matrix.
 
+## Startup phase baseline
+
+A clean release MSVC build with the profiler completed [20 authenticated phase observations](validation/windows11-26300-startup-phases.json) on this Windows 11 host. Median process-to-observation time was 3.395 seconds and p95 was 5.919 seconds. The 11.923-second maximum remains in the record. Every launch reached the off state through the installed service under a fresh standard-user token and a fresh WebView profile. Local compilation and browser-test processes had stopped; normal OS caches and other applications remained. Foreground ownership was not controlled.
+
+| Interval | Median | p95 |
+| --- | ---: | ---: |
+| Configured-window creation before application setup | 1,970 ms | 3,071 ms |
+| Native network registration | 16 ms | 36 ms |
+| First host status request | 4 ms | 7 ms |
+| First host adapter request | 361 ms | 2,106 ms |
+| Document module execution to startup effect | 313 ms | 401 ms |
+
+These are separate distributions; they must not be added. The configured-window interval includes event-loop startup and WebView creation, and does not isolate browser or renderer creation. Request intervals include scheduling and coordinator waits. The overall endpoint includes CDP observation. Different accounts, builds, and times prevent a causal comparison with earlier batches. All release-budget decisions remain unassessed for this instrumented diagnostic.
+
+The native setup and status timings do not support removing readiness checks. An experiment starts asynchronous frontend subscriptions and initialization in React's commit phase so they can overlap the first paint. It still waits for native subscriptions, frontend listeners, the document handshake, and a current complete status/adapter pair. The hook returns without waiting for native work; the loading interface and settings must stay responsive. This changes scheduling and requires measurement before any speed-improvement claim.
+
+Safe uninstall preserved the exact native DNS baseline. Independent cleanup checks confirmed removal of the service, operator group, temporary account, installation, active data directory, and uninstall registration. Private test data remains in a protected archive. This batch does not qualify foreground resources, sleep/resume, VPN interference, reference hardware, or manual assistive technology.
+
 ## WebView runtime CPU diagnostic
 
 A [separate 45.95-second desktop-only diagnostic](validation/windows11-26300-runtime-cpu-diagnostic.json) used the preceding release candidate with a reused isolated profile and no service or CDP listener. It observed 6.6984% of one logical CPU in the WebView browser, 2.3801% across two utility processes, 0.0340% in the native host, and zero in the renderer. Other process roles used no observed CPU during this interval. These endpoint counters can omit transient children. The interval was short and did not establish foreground conditions, so all release-budget decisions remain unassessed.

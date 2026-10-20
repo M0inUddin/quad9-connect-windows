@@ -159,6 +159,24 @@ test("startup coalesces focus and network events and waits for a current result"
     .toBe(1);
 });
 
+test("startup keeps settings responsive while the native read is pending", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Settings", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("radio", { name: "Dark", exact: true }).check();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.getByRole("button", { name: "Connection", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText("Reading service state");
+  await calls(page, ["get_status"]);
+  await release(page, 0);
+  await calls(page, ["get_status", "list_adapters"]);
+  await release(page, 1);
+  await expect(page.getByRole("status")).toHaveText("Ready when you are");
+});
+
 test("a network event during adapter inspection requires a complete fresh read", async ({
   page,
 }) => {
