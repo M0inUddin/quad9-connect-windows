@@ -1,0 +1,162 @@
+{
+  "schema": 1,
+  "date_utc": "2026-10-20",
+  "build": {
+    "type": "Unsigned release MSVC, x86_64-pc-windows-msvc",
+    "clean_source_commit": "f87c6219a8a267c6b2f9044232af1e4d05a6e043",
+    "source_tree": "578e7919029a7e1cc60f213103abc9b4c1c3f80b",
+    "source_dirty": false,
+    "artifact_run": "https://github.com/M0inUddin/quad9-connect-windows/actions/runs/39326223578",
+    "installer_sha256": "f49a771b6bae5e8efe6aaf51f02fee9ae04b8b4a17ef72a77c1f8cee1c75fc99",
+    "desktop_sha256": "0bf56ec2947125bdc0ac04cf83a0fb4f674d606923eb9639f99723f8cf33dbee",
+    "service_sha256": "5f5f13c2b983824ca545ebc28e2f994b6a00f8a07c218b0fd360e6508d5637a1",
+    "scope": "Baseline before startup refresh coalescing."
+  },
+  "host": {
+    "windows_version": "10.0.26300",
+    "processor": "13th Gen Intel Core i7-1370P",
+    "logical_processors": 20,
+    "installed_ram_gib": 32,
+    "installed_webview2_versions": ["155.0.4283.60", "155.0.4283.62"],
+    "runtime_version_per_launch": "Not captured",
+    "reference_machine": false
+  },
+  "authorization": {
+    "account": "Temporary standard local account enrolled by the real installer; fresh secondary-logon token for each launch.",
+    "connection_state": "Ready when you are",
+    "management": "Off, no journal or recovery block",
+    "credentials": "Generated in memory, never serialized.",
+    "account_disabled_after_last_launch": true
+  },
+  "method": {
+    "start": "Native desktop process creation time reported by Windows, excluding credential/bootstrap startup.",
+    "end": "Node high-resolution epoch clock when CDP observes the authenticated settled live region.",
+    "profiles": "20 new desktop processes, each with a fresh WebView profile; same temporary user and normal OS caches.",
+    "p95": "Nearest rank, nineteenth of twenty ordered observations.",
+    "observation": "Includes CDP attachment/observation overhead; no compilation or browser regression suite during the run.",
+    "privacy": "Raw DNS, accounts, SIDs, local paths, profiles, and recovery records excluded."
+  },
+  "startup": {
+    "count": 20,
+    "p95_ms": 3344.001,
+    "target_ms": 3000,
+    "target_pass": false,
+    "observations": [
+      {
+        "run": 1,
+        "observed_ms": 2342.565,
+        "renderer_origin_ms": 1453.7
+      },
+      {
+        "run": 2,
+        "observed_ms": 2416.0,
+        "renderer_origin_ms": 1479.9
+      },
+      {
+        "run": 3,
+        "observed_ms": 2328.501,
+        "renderer_origin_ms": 1545.8
+      },
+      {
+        "run": 4,
+        "observed_ms": 2771.262,
+        "renderer_origin_ms": 1854.1
+      },
+      {
+        "run": 5,
+        "observed_ms": 2054.874,
+        "renderer_origin_ms": 1363.4
+      },
+      {
+        "run": 6,
+        "observed_ms": 2521.077,
+        "renderer_origin_ms": 1374.6
+      },
+      {
+        "run": 7,
+        "observed_ms": 3344.001,
+        "renderer_origin_ms": 2459.8
+      },
+      {
+        "run": 8,
+        "observed_ms": 2479.477,
+        "renderer_origin_ms": 1528.7
+      },
+      {
+        "run": 9,
+        "observed_ms": 4220.974,
+        "renderer_origin_ms": 2581.5
+      },
+      {
+        "run": 10,
+        "observed_ms": 2794.226,
+        "renderer_origin_ms": 2126.3
+      },
+      {
+        "run": 11,
+        "observed_ms": 2102.219,
+        "renderer_origin_ms": 1490.5
+      },
+      {
+        "run": 12,
+        "observed_ms": 2168.982,
+        "renderer_origin_ms": 1480.0
+      },
+      {
+        "run": 13,
+        "observed_ms": 2236.802,
+        "renderer_origin_ms": 1338.6
+      },
+      {
+        "run": 14,
+        "observed_ms": 2052.073,
+        "renderer_origin_ms": 1341.9
+      },
+      {
+        "run": 15,
+        "observed_ms": 2520.607,
+        "renderer_origin_ms": 1664.8
+      },
+      {
+        "run": 16,
+        "observed_ms": 2036.845,
+        "renderer_origin_ms": 1328.7
+      },
+      {
+        "run": 17,
+        "observed_ms": 2212.781,
+        "renderer_origin_ms": 1438.9
+      },
+      {
+        "run": 18,
+        "observed_ms": 2279.705,
+        "renderer_origin_ms": 1422.7
+      },
+      {
+        "run": 19,
+        "observed_ms": 2299.027,
+        "renderer_origin_ms": 1615.8
+      },
+      {
+        "run": 20,
+        "observed_ms": 2262.694,
+        "renderer_origin_ms": 1495.0
+      }
+    ]
+  },
+  "cleanup": {
+    "native_dns_unchanged": true,
+    "safe_uninstall_passed": true,
+    "service_removed": true,
+    "operator_group_removed": true,
+    "temporary_account_removed": true,
+    "installation_removed": true,
+    "test_data_archived_with_administrator_only_write_access": true
+  },
+  "limitations": [
+    "Development host exceeds the four-logical-CPU/8-GiB reference configuration.",
+    "No foreground, CPU, or memory qualification is implied by startup observations.",
+    "This baseline predates the refresh fix and does not establish an optimization effect.",
+    "The native creation-time start differs from the earlier direct-spawn Node timer; results are not a controlled before/after comparison."
+  ]
+}

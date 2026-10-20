@@ -168,6 +168,9 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   const invalidate = useCallback(() => {
     const epoch = ++observationEpoch.current;
     setProbe(null);
+    // Startup owns its reads until a complete status/adapter pair survives
+    // invalidation. Focus and network bursts must not start competing reads.
+    if (initializing.current) return;
     if (lock.current) {
       refreshPending.current = true;
       return;
@@ -303,43 +306,62 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      if (isTauri()) {
-        await nativeListenersReady.current;
-        if (!alive) return;
-        const context = await invoke<InterfaceContext>("interface_context", {
-          newDocument: true,
-        });
-        if (context) {
-          documentId.current = context.document_id;
-          if (!navigationPending.current) setView(context.view);
-          if (context.tray_result) acceptTrayResult(context.tray_result);
-          if (context.diagnostic_pending) diagnosticQueued.current = true;
-          handshakeReady.current = true;
-          if (navigationPending.current) {
-            navigationPending.current = false;
-            const pending = await invoke<InterfaceContext>("interface_context");
-            if (pending?.tray_result) acceptTrayResult(pending.tray_result);
-            if (pending?.diagnostic_pending) diagnosticQueued.current = true;
+      try {
+        if (isTauri()) {
+          await nativeListenersReady.current;
+          if (!alive) return;
+          const context = await invoke<InterfaceContext>("interface_context", {
+            newDocument: true,
+          });
+          if (context) {
+            documentId.current = context.document_id;
+            if (!navigationPending.current) setView(context.view);
+            if (context.tray_result) acceptTrayResult(context.tray_result);
+            if (context.diagnostic_pending) diagnosticQueued.current = true;
+            handshakeReady.current = true;
+            if (navigationPending.current) {
+              navigationPending.current = false;
+              const pending =
+                await invoke<InterfaceContext>("interface_context");
+              if (pending?.tray_result) acceptTrayResult(pending.tray_result);
+              if (pending?.diagnostic_pending) diagnosticQueued.current = true;
+            }
           }
-          await refresh();
-          return;
         }
-      }
-      await refresh();
-    })()
-      .catch((e) => {
+        for (let attempt = 0; alive && attempt < 3; attempt++) {
+          if (attempt) {
+            await new Promise((resolve) => setTimeout(resolve, attempt * 150));
+            if (!alive) return;
+          }
+          const epoch = observationEpoch.current;
+          try {
+            await refresh();
+          } catch (error) {
+            // A network event can also obsolete a failed connection attempt.
+            // Only a failure from the current observation should end startup.
+            if (epoch === observationEpoch.current) throw error;
+          }
+          // Return enters finally synchronously, so no promise callback can
+          // invalidate this read before normal event handling takes over.
+          if (epoch === observationEpoch.current) return;
+        }
+        if (alive)
+          throw new Error(
+            "The network keeps changing. Wait for it to settle, then reconnect.",
+          );
+      } catch (e) {
         if (alive) {
           setStatus(null);
-          setError(String(e.message ?? e));
+          setError(String(e instanceof Error ? e.message : e));
         }
-      })
-      .finally(() => {
+      } finally {
         if (alive) {
           initializing.current = false;
           if (diagnosticQueued.current) requestTrayDiagnostic();
           else setBusy(null);
         }
-      });
+      }
+    })();
     return () => {
       alive = false;
     };
