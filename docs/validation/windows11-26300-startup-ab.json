@@ -1,0 +1,802 @@
+{
+  "schema": 1,
+  "date": "2026-10-20",
+  "purpose": "Counterbalanced startup listener scheduling experiment and simultaneous resource observations",
+  "host": {
+    "operating_system": "Windows 11 Pro",
+    "build": "10.0.26300",
+    "cpu": "Intel Core i7-1370P",
+    "logical_processors": 20,
+    "installed_memory_gib": 32,
+    "storage": "NVMe SSD",
+    "reference_machine": false,
+    "webview2_version": "155.0.4283.62"
+  },
+  "candidates": {
+    "before": {
+      "type": "Unsigned release MSVC",
+      "target": "x86_64-pc-windows-msvc",
+      "clean_source_commit": "3f0379ca0a74545454833e76e12269947368d8de",
+      "source_tree": "ed9fff93b615e74f1c201425be17ae6b4ffdb389",
+      "compared_pr_head": "41f364effb37d9450e9eac3c80e1fc98767ec003",
+      "source_dirty": false,
+      "ci_run": 39370311908,
+      "artifact_id": 12241034185,
+      "artifact_zip_digest_reported_by_github": "d0fa46e0b2b78a8dbae150e554febe39997bf6bd851267d1b63a2ab460eab27a",
+      "build_id": "deda35ddbe05b3128654b69792383a0892015843018f3d3ac5570ca3642b0515",
+      "installer_sha256": "a7a6966d8304e10b4a7ea1524f87b9b0c161b3daac5436ca4e04a7012549fe79",
+      "desktop_sha256": "f4e5f53277cb78bf2d40e9c58e5f6a784eea8eb6bb03c706fa98f94893bd512b",
+      "service_sha256": "c7672530acb176da807c6c2d65819b0e05b8675ee680d030ab388e23589fcb9f",
+      "runtime_comparison": "Runtime source matches final PR21 head; later diagnostic option parsing and tests do not change desktop/service runtime source."
+    },
+    "after": {
+      "type": "Unsigned release MSVC",
+      "target": "x86_64-pc-windows-msvc",
+      "clean_source_commit": "4464a26eb2c9aa9582f7c99108cab453baa7afd9",
+      "source_tree": "412155b8a9adab5e85f33e5727050e2a9835fc87",
+      "compared_pr_head": "0b5352d2ac52869a975d30497114850c5366a2d2",
+      "source_dirty": false,
+      "ci_run": 39373014104,
+      "artifact_id": 12242092871,
+      "artifact_zip_digest_reported_by_github": "b64ba8fdf0de40854c7240b36f0bf6313eef9a4e544f26004e9e3ffa5e1da2ad",
+      "build_id": "a694de2b90b524149a1804734742643a42d080e51b5b33310d0c7c3d5e17db9a",
+      "installer_sha256": "bfd0b96d1546f0194030a0672fc33d105e1fee80aab9e9fee71f59e523682cbd",
+      "desktop_sha256": "3a2866f384246591a0a50029c69d2f8f3a7f1bd686d70d54e28644bd3f51219e",
+      "service_sha256": "37578384a0ac91969db6bac7a8b9505bb28c7fd8f7ab64444e1685feb9540a12",
+      "runtime_change": "Only native subscription registration moves from useEffect to useLayoutEffect. Initialization retains its existing useEffect ordering. No native service source changes.",
+      "disposition": "Scheduling change reverted after no clear gain. Resource observations identify this experimental binary and do not qualify the final source."
+    }
+  },
+  "method": {
+    "startup": "Forty fresh WebView profiles and fresh secondary-logon standard-user tokens under one temporary installer-enrolled account. Alternating pair order BA, AB, repeated ten times. All observations retained.",
+    "service": "One installed after-build LocalSystem service for both desktop candidates; service source/protocol unchanged. DNS management off throughout, no journal or recovery block.",
+    "timing": "Windows native process creation until CDP observes the settled authenticated live region. Bootstrap excluded, CDP observation included; timeline snapshots and memory hint read after that endpoint.",
+    "statistics": "Per candidate median averages middle two values; p95 is nineteenth of twenty. Paired differences subtract before from after within each adjacent pair. Summaries rounded to 0.001 ms; observations retain returned precision.",
+    "startup_environment": "All forty post-endpoint snapshots were visible but inactive, with the Low memory hint. Normal OS caches and other applications remained; local compilation and browser tests stopped before the batch. Power conditions not controlled.",
+    "resources": "Last after-build desktop retained after startup. CDP disconnected before counters. Thirty seconds settling then at least five minutes of cumulative job CPU, including exited desktop descendants, plus simultaneous LocalSystem service counters. Shared resident pages count in every process working set.",
+    "foreground": "Actual foreground PID compared with the native host at every sample. Scoped display/system execution request during window sampling; no power or accessibility setting changes. Unsampled focus transitions are not established.",
+    "privacy": "No account identifiers, process IDs, DNS settings, raw journals, profiles, or local paths published."
+  },
+  "startup": {
+    "groups": {
+      "before": {
+        "count": 20,
+        "intervals_ms": {
+          "process_to_observation": {
+            "count": 20,
+            "median": 2493.117,
+            "p95": 3423.647,
+            "minimum": 1963.394,
+            "maximum": 4015.985
+          },
+          "configured_window": {
+            "count": 20,
+            "median": 1536.876,
+            "p95": 1953.56,
+            "minimum": 1180.488,
+            "maximum": 2225.203
+          },
+          "module_to_startup_effect": {
+            "count": 20,
+            "median": 237.9,
+            "p95": 266.3,
+            "minimum": 189.6,
+            "maximum": 354.2
+          },
+          "native_listener_registration": {
+            "count": 20,
+            "median": 30.5,
+            "p95": 45.2,
+            "minimum": 20.8,
+            "maximum": 59
+          },
+          "interface_context": {
+            "count": 20,
+            "median": 9.15,
+            "p95": 11.6,
+            "minimum": 6.6,
+            "maximum": 11.9
+          },
+          "first_adapters": {
+            "count": 20,
+            "median": 224.024,
+            "p95": 679.547,
+            "minimum": 183.952,
+            "maximum": 1032.583
+          }
+        }
+      },
+      "after": {
+        "count": 20,
+        "intervals_ms": {
+          "process_to_observation": {
+            "count": 20,
+            "median": 2439.545,
+            "p95": 3119.426,
+            "minimum": 2053.362,
+            "maximum": 3321.907
+          },
+          "configured_window": {
+            "count": 20,
+            "median": 1608.512,
+            "p95": 2200.658,
+            "minimum": 1185.399,
+            "maximum": 2241.507
+          },
+          "module_to_startup_effect": {
+            "count": 20,
+            "median": 228.05,
+            "p95": 324.6,
+            "minimum": 176,
+            "maximum": 412.1
+          },
+          "native_listener_registration": {
+            "count": 20,
+            "median": 29.9,
+            "p95": 35,
+            "minimum": 22.1,
+            "maximum": 35.4
+          },
+          "interface_context": {
+            "count": 20,
+            "median": 9.75,
+            "p95": 12.2,
+            "minimum": 6.4,
+            "maximum": 12.7
+          },
+          "first_adapters": {
+            "count": 20,
+            "median": 209.615,
+            "p95": 304.83,
+            "minimum": 164.866,
+            "maximum": 308.514
+          }
+        }
+      }
+    },
+    "paired_after_minus_before_ms": {
+      "process_to_observation": {
+        "count": 20,
+        "median": 0.515,
+        "p95": 521.928,
+        "minimum": -1939.788,
+        "maximum": 606.344
+      },
+      "configured_window": {
+        "count": 20,
+        "median": 55.356,
+        "p95": 565.535,
+        "minimum": -701.92,
+        "maximum": 639.724
+      },
+      "module_to_startup_effect": {
+        "count": 20,
+        "median": 2.55,
+        "p95": 127,
+        "minimum": -144.1,
+        "maximum": 213.7
+      },
+      "native_listener_registration": {
+        "count": 20,
+        "median": 0.35,
+        "p95": 6.6,
+        "minimum": -33,
+        "maximum": 13.1
+      },
+      "interface_context": {
+        "count": 20,
+        "median": 0.1,
+        "p95": 3.8,
+        "minimum": -2.3,
+        "maximum": 4.4
+      },
+      "first_adapters": {
+        "count": 20,
+        "median": -9.986,
+        "p95": 66.008,
+        "minimum": -837.052,
+        "maximum": 85.532
+      }
+    },
+    "runs": [
+      {
+        "run": 1,
+        "pair": 1,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 2357.28271484375,
+          "configured_window": 1567.929,
+          "module_to_startup_effect": 197.19999998807907,
+          "native_listener_registration": 27.399999976158142,
+          "interface_context": 7.100000023841858,
+          "first_adapters": 220.49490000000014
+        }
+      },
+      {
+        "run": 2,
+        "pair": 1,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 2140.685302734375,
+          "configured_window": 1300.8437000000001,
+          "module_to_startup_effect": 189.60000002384186,
+          "native_listener_registration": 25.599999964237213,
+          "interface_context": 8.5,
+          "first_adapters": 214.94770000000017
+        }
+      },
+      {
+        "run": 3,
+        "pair": 2,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 2603.755859375,
+          "configured_window": 1824.0085,
+          "module_to_startup_effect": 199.19999998807907,
+          "native_listener_registration": 26.400000035762787,
+          "interface_context": 9.299999952316284,
+          "first_adapters": 213.12329999999974
+        }
+      },
+      {
+        "run": 4,
+        "pair": 2,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 2422.23681640625,
+          "configured_window": 1625.4124000000002,
+          "module_to_startup_effect": 210.5,
+          "native_listener_registration": 27.899999976158142,
+          "interface_context": 9.600000023841858,
+          "first_adapters": 229.76240000000007
+        }
+      },
+      {
+        "run": 5,
+        "pair": 3,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 2683.571044921875,
+          "configured_window": 1573.1668,
+          "module_to_startup_effect": 324.60000002384186,
+          "native_listener_registration": 33,
+          "interface_context": 10.699999988079071,
+          "first_adapters": 242.192
+        }
+      },
+      {
+        "run": 6,
+        "pair": 3,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 2077.2275390625,
+          "configured_window": 1354.8977,
+          "module_to_startup_effect": 197.60000002384186,
+          "native_listener_registration": 29.5,
+          "interface_context": 9.099999964237213,
+          "first_adapters": 196.4969000000001
+        }
+      },
+      {
+        "run": 7,
+        "pair": 4,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 2332.99560546875,
+          "configured_window": 1471.6982,
+          "module_to_startup_effect": 263,
+          "native_listener_registration": 45.19999998807907,
+          "interface_context": 11.899999976158142,
+          "first_adapters": 242.0418999999997
+        }
+      },
+      {
+        "run": 8,
+        "pair": 4,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 2161.736328125,
+          "configured_window": 1380.9618,
+          "module_to_startup_effect": 193.5999999642372,
+          "native_listener_registration": 22.600000023841858,
+          "interface_context": 10.5,
+          "first_adapters": 199.3054000000002
+        }
+      },
+      {
+        "run": 9,
+        "pair": 5,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 2166.685302734375,
+          "configured_window": 1490.4320999999998,
+          "module_to_startup_effect": 200.10000002384186,
+          "native_listener_registration": 24.100000023841858,
+          "interface_context": 8.099999964237213,
+          "first_adapters": 194.0471
+        }
+      },
+      {
+        "run": 10,
+        "pair": 5,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 2388.737060546875,
+          "configured_window": 1539.627,
+          "module_to_startup_effect": 238,
+          "native_listener_registration": 28.80000001192093,
+          "interface_context": 8.5,
+          "first_adapters": 183.95159999999987
+        }
+      },
+      {
+        "run": 11,
+        "pair": 6,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 3423.646728515625,
+          "configured_window": 1618.0040000000001,
+          "module_to_startup_effect": 266.30000001192093,
+          "native_listener_registration": 38.89999997615814,
+          "interface_context": 10.199999988079071,
+          "first_adapters": 679.5473000000002
+        }
+      },
+      {
+        "run": 12,
+        "pair": 6,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 2053.36181640625,
+          "configured_window": 1360.2974,
+          "module_to_startup_effect": 176,
+          "native_listener_registration": 26.399999976158142,
+          "interface_context": 8.699999988079071,
+          "first_adapters": 183.78970000000004
+        }
+      },
+      {
+        "run": 13,
+        "pair": 7,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 3119.42626953125,
+          "configured_window": 1936.5495,
+          "module_to_startup_effect": 412.0999999642372,
+          "native_listener_registration": 30.200000047683716,
+          "interface_context": 11.899999976158142,
+          "first_adapters": 304.82970000000023
+        }
+      },
+      {
+        "run": 14,
+        "pair": 7,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 2597.497802734375,
+          "configured_window": 1795.5396,
+          "module_to_startup_effect": 198.39999997615814,
+          "native_listener_registration": 27.100000023841858,
+          "interface_context": 7.5,
+          "first_adapters": 219.29749999999967
+        }
+      },
+      {
+        "run": 15,
+        "pair": 8,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 2657.03857421875,
+          "configured_window": 1642.0322,
+          "module_to_startup_effect": 241,
+          "native_listener_registration": 41.80000001192093,
+          "interface_context": 10.299999952316284,
+          "first_adapters": 316.74239999999963
+        }
+      },
+      {
+        "run": 16,
+        "pair": 8,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 2465.440185546875,
+          "configured_window": 1661.6033999999997,
+          "module_to_startup_effect": 238.5,
+          "native_listener_registration": 24.700000047683716,
+          "interface_context": 8.599999964237213,
+          "first_adapters": 178.76770000000033
+        }
+      },
+      {
+        "run": 17,
+        "pair": 9,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 2518.742919921875,
+          "configured_window": 1687.2849,
+          "module_to_startup_effect": 218.0999999642372,
+          "native_listener_registration": 31.700000047683716,
+          "interface_context": 9.699999988079071,
+          "first_adapters": 222.92889999999989
+        }
+      },
+      {
+        "run": 18,
+        "pair": 9,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 2004.770751953125,
+          "configured_window": 1290.7137999999998,
+          "module_to_startup_effect": 195.79999995231628,
+          "native_listener_registration": 30.30000001192093,
+          "interface_context": 9,
+          "first_adapters": 190.57690000000002
+        }
+      },
+      {
+        "run": 19,
+        "pair": 10,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 3097.358154296875,
+          "configured_window": 2225.2028,
+          "module_to_startup_effect": 219.19999998807907,
+          "native_listener_registration": 20.80000001192093,
+          "interface_context": 6.600000023841858,
+          "first_adapters": 208.50000000000045
+        }
+      },
+      {
+        "run": 20,
+        "pair": 10,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 2363.517333984375,
+          "configured_window": 1523.2825,
+          "module_to_startup_effect": 247.19999998807907,
+          "native_listener_registration": 33.90000003576279,
+          "interface_context": 9.399999976158142,
+          "first_adapters": 208.98869999999988
+        }
+      },
+      {
+        "run": 21,
+        "pair": 11,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 2430.81005859375,
+          "configured_window": 1595.8352,
+          "module_to_startup_effect": 253.19999998807907,
+          "native_listener_registration": 26,
+          "interface_context": 9.900000035762787,
+          "first_adapters": 210.24079999999958
+        }
+      },
+      {
+        "run": 22,
+        "pair": 11,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 2806.269775390625,
+          "configured_window": 1878.7373999999998,
+          "module_to_startup_effect": 264.80000001192093,
+          "native_listener_registration": 59,
+          "interface_context": 9.399999976158142,
+          "first_adapters": 282.924
+        }
+      },
+      {
+        "run": 23,
+        "pair": 12,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 3048.21826171875,
+          "configured_window": 1665.0753,
+          "module_to_startup_effect": 354.19999998807907,
+          "native_listener_registration": 37,
+          "interface_context": 9,
+          "first_adapters": 488.3885
+        }
+      },
+      {
+        "run": 24,
+        "pair": 12,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 2575.334716796875,
+          "configured_window": 1688.7235,
+          "module_to_startup_effect": 210.10000002384186,
+          "native_listener_registration": 33.39999997615814,
+          "interface_context": 8.699999988079071,
+          "first_adapters": 189.33289999999988
+        }
+      },
+      {
+        "run": 25,
+        "pair": 13,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 2993.46923828125,
+          "configured_window": 2200.6578,
+          "module_to_startup_effect": 186.4000000357628,
+          "native_listener_registration": 22.099999964237213,
+          "interface_context": 6.400000035762787,
+          "first_adapters": 230.11080000000038
+        }
+      },
+      {
+        "run": 26,
+        "pair": 13,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 2604.615478515625,
+          "configured_window": 1560.9338999999998,
+          "module_to_startup_effect": 237.79999995231628,
+          "native_listener_registration": 30.80000001192093,
+          "interface_context": 7.600000023841858,
+          "first_adapters": 310.991
+        }
+      },
+      {
+        "run": 27,
+        "pair": 14,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 2286.598876953125,
+          "configured_window": 1440.1381,
+          "module_to_startup_effect": 240.80000001192093,
+          "native_listener_registration": 36.09999996423721,
+          "interface_context": 9.200000047683716,
+          "first_adapters": 205.54240000000027
+        }
+      },
+      {
+        "run": 28,
+        "pair": 14,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 2716.488037109375,
+          "configured_window": 2005.6728,
+          "module_to_startup_effect": 216.0999999642372,
+          "native_listener_registration": 35.40000003576279,
+          "interface_context": 9.800000011920929,
+          "first_adapters": 164.8661000000002
+        }
+      },
+      {
+        "run": 29,
+        "pair": 15,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 2076.197265625,
+          "configured_window": 1185.3990000000001,
+          "module_to_startup_effect": 238,
+          "native_listener_registration": 35,
+          "interface_context": 10.100000023841858,
+          "first_adapters": 195.5304000000001
+        }
+      },
+      {
+        "run": 30,
+        "pair": 15,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 4015.985107421875,
+          "configured_window": 1498.178,
+          "module_to_startup_effect": 261.80000001192093,
+          "native_listener_registration": 31.30000001192093,
+          "interface_context": 11,
+          "first_adapters": 1032.5828000000001
+        }
+      },
+      {
+        "run": 31,
+        "pair": 16,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 1963.3935546875,
+          "configured_window": 1180.4883,
+          "module_to_startup_effect": 218.5,
+          "native_listener_registration": 30.5,
+          "interface_context": 10.900000035762787,
+          "first_adapters": 188.0015000000003
+        }
+      },
+      {
+        "run": 32,
+        "pair": 16,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 2271.880859375,
+          "configured_window": 1341.8519,
+          "module_to_startup_effect": 289.5,
+          "native_listener_registration": 33.09999996423721,
+          "interface_context": 10.800000011920929,
+          "first_adapters": 254.00950000000012
+        }
+      },
+      {
+        "run": 33,
+        "pair": 17,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 2606.540283203125,
+          "configured_window": 1661.8669,
+          "module_to_startup_effect": 265.69999998807907,
+          "native_listener_registration": 28.5,
+          "interface_context": 9.300000011920929,
+          "first_adapters": 208.29090000000042
+        }
+      },
+      {
+        "run": 34,
+        "pair": 17,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 2306.455322265625,
+          "configured_window": 1441.5732,
+          "module_to_startup_effect": 239.10000002384186,
+          "native_listener_registration": 33.69999998807907,
+          "interface_context": 11.600000023841858,
+          "first_adapters": 228.75099999999975
+        }
+      },
+      {
+        "run": 35,
+        "pair": 18,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 2836.75927734375,
+          "configured_window": 1953.5596999999998,
+          "module_to_startup_effect": 244,
+          "native_listener_registration": 27.80000001192093,
+          "interface_context": 9.800000011920929,
+          "first_adapters": 265.0550999999996
+        }
+      },
+      {
+        "run": 36,
+        "pair": 18,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 3321.906982421875,
+          "configured_window": 2241.5074999999997,
+          "module_to_startup_effect": 258.7999999523163,
+          "native_listener_registration": 34.40000003576279,
+          "interface_context": 12.199999988079071,
+          "first_adapters": 308.5144
+        }
+      },
+      {
+        "run": 37,
+        "pair": 19,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 2448.279052734375,
+          "configured_window": 1621.1889999999999,
+          "module_to_startup_effect": 238,
+          "native_listener_registration": 30.399999976158142,
+          "interface_context": 11.700000047683716,
+          "first_adapters": 222.21579999999994
+        }
+      },
+      {
+        "run": 38,
+        "pair": 19,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 2275.990234375,
+          "configured_window": 1534.1249,
+          "module_to_startup_effect": 209.60000002384186,
+          "native_listener_registration": 26.69999998807907,
+          "interface_context": 8.5,
+          "first_adapters": 199.84610000000043
+        }
+      },
+      {
+        "run": 39,
+        "pair": 20,
+        "candidate": "before",
+        "intervals_ms": {
+          "process_to_observation": 2297.33349609375,
+          "configured_window": 1433.9080999999999,
+          "module_to_startup_effect": 231.69999998807907,
+          "native_listener_registration": 30.5,
+          "interface_context": 8.900000035762787,
+          "first_adapters": 252.73959999999965
+        }
+      },
+      {
+        "run": 40,
+        "pair": 20,
+        "candidate": "after",
+        "intervals_ms": {
+          "process_to_observation": 2103.309326171875,
+          "configured_window": 1327.9783,
+          "module_to_startup_effect": 212.89999997615814,
+          "native_listener_registration": 29.600000023841858,
+          "interface_context": 12.699999988079071,
+          "first_adapters": 197.6322
+        }
+      }
+    ],
+    "startup_target_ms": 3000,
+    "qualification": null,
+    "conclusion": "No clear overall or listener-registration benefit. Paired median differences are approximately zero. Both observed p95 values exceed three seconds; instrumented inactive-window diagnostics do not qualify release startup."
+  },
+  "resources": {
+    "window": {
+      "candidate": "after",
+      "experimental_scheduling_reverted": true,
+      "measured_seconds": 300.5261023,
+      "settle_seconds": 30,
+      "complete_process_set": true,
+      "cpu_measurement_complete": true,
+      "cpu_accounting": "Windows job totals include exited desktop descendants; separate service counters when supplied.",
+      "process_exits_observed": false,
+      "sampler_display_awake_requested": true,
+      "cpu_percent_one_logical_core": 0.7850815559590746,
+      "maximum_working_set_mib": 224.8203125,
+      "average_working_set_mib": 182.95434346330276,
+      "maximum_service_working_set_mib": 11.12890625,
+      "foreground_required": true,
+      "host_foreground_throughout": false,
+      "samples": 109,
+      "foreground_samples": 17,
+      "first_non_foreground_seconds": 0.7585537,
+      "last_foreground_seconds": 231.4537394,
+      "minimum_webviews": 6,
+      "maximum_webviews": 6,
+      "measured_candidate_cpu_target_pass": null,
+      "measured_candidate_memory_target_pass": null,
+      "measured_candidate_service_memory_target_pass": null,
+      "final_source_qualification": null
+    },
+    "tray": {
+      "candidate": "after",
+      "experimental_scheduling_reverted": true,
+      "measured_seconds": 300.78398289999996,
+      "settle_seconds": 30,
+      "complete_process_set": true,
+      "cpu_measurement_complete": true,
+      "cpu_accounting": "Windows job totals include exited desktop descendants; separate service counters when supplied.",
+      "process_exits_observed": false,
+      "sampler_display_awake_requested": false,
+      "cpu_percent_one_logical_core": 0.06753185393769186,
+      "maximum_working_set_mib": 38.21484375,
+      "average_working_set_mib": 38.15858644859813,
+      "maximum_service_working_set_mib": 10.73828125,
+      "foreground_required": false,
+      "host_foreground_throughout": false,
+      "samples": 107,
+      "foreground_samples": 0,
+      "first_non_foreground_seconds": null,
+      "last_foreground_seconds": null,
+      "minimum_webviews": 0,
+      "maximum_webviews": 0,
+      "measured_candidate_cpu_target_pass": true,
+      "measured_candidate_memory_target_pass": true,
+      "measured_candidate_service_memory_target_pass": true,
+      "final_source_qualification": null
+    }
+  },
+  "cleanup": {
+    "finished": true,
+    "native_dns_unchanged": true,
+    "safe_service_removal": true,
+    "service_absent": true,
+    "operator_group_absent": true,
+    "temporary_account_removed": true,
+    "installation_removed": true,
+    "active_data_removed": true,
+    "uninstall_registration_removed": true,
+    "measurement_error_absent": true,
+    "cleanup_error_absent": true,
+    "private_test_data_archived_with_administrator_only_write_access": true
+  },
+  "limitations": [
+    "Development hardware differs from the specified four-logical-CPU/8-GiB reference machine.",
+    "The scheduling experiment was reverted; exact final-source resource qualification remains open.",
+    "Sleep/resume, VPN interference, physical handoffs, manual assistive technology, and the remaining Windows support matrix are not established."
+  ]
+}

@@ -1,0 +1,742 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-20",
+  "purpose": "Authenticated startup phase baseline before listener scheduling experiment",
+  "host": {
+    "operating_system": "Windows 11 Pro",
+    "build": "10.0.26300",
+    "cpu": "Intel Core i7-1370P",
+    "logical_processors": 20,
+    "installed_memory_gib": 32,
+    "storage": "NVMe SSD",
+    "reference_machine": false,
+    "webview2_version": "155.0.4283.62"
+  },
+  "candidate": {
+    "build_type": "release",
+    "target": "x86_64-pc-windows-msvc",
+    "source_commit": "3f0379ca0a74545454833e76e12269947368d8de",
+    "source_tree": "ed9fff93b615e74f1c201425be17ae6b4ffdb389",
+    "source_dirty": false,
+    "runtime_source_matches_pr21_final_head": "41f364effb37d9450e9eac3c80e1fc98767ec003",
+    "runtime_source_comparison": "No differences in desktop src/src-tauri, crates, installer, or scripts/validation; final review fix changes diagnostic argument parsing and its tests.",
+    "ci_run": 39370311908,
+    "artifact_id": 12241034185,
+    "artifact_zip_digest_reported_by_github": "d0fa46e0b2b78a8dbae150e554febe39997bf6bd851267d1b63a2ab460eab27a",
+    "build_id": "deda35ddbe05b3128654b69792383a0892015843018f3d3ac5570ca3642b0515",
+    "installer_sha256": "a7a6966d8304e10b4a7ea1524f87b9b0c161b3daac5436ca4e04a7012549fe79",
+    "desktop_sha256": "f4e5f53277cb78bf2d40e9c58e5f6a784eea8eb6bb03c706fa98f94893bd512b",
+    "service_sha256": "c7672530acb176da807c6c2d65819b0e05b8675ee680d030ab388e23589fcb9f"
+  },
+  "method": {
+    "launch_count": 20,
+    "profile": "Fresh WebView profile and fresh secondary-logon standard-user token for every launch; same temporary installer-enrolled account.",
+    "ready_state": "Ready when you are; authenticated service, no journal or recovery block, DNS management off.",
+    "duration": "Windows native process creation until Node high-resolution epoch clock observes settled live region through CDP; launcher excluded, CDP observation overhead included. Timeline snapshots are collected after that endpoint.",
+    "phases": "Native Instant offsets from Rust main entry; document Performance.timeOrigin offsets and User Timing marks. The configured-window interval includes event-loop startup and automatic WebView creation before app setup, not isolated browser/renderer creation. Intervals can overlap; separate medians and p95 values must not be added.",
+    "environment": "Normal OS caches and background applications. Task-owned local compiler and browser-test processes stopped before this batch. Foreground ownership and power conditions not controlled.",
+    "statistics": "Median averages the two middle observations; p95 is the 19th ordered observation. All observations retained, including the 11.923-second maximum.",
+    "limitations": [
+      "Instrumented phase diagnostic on development hardware; no release qualification.",
+      "Independent account/time/build batches do not establish a causal performance change.",
+      "Windows and document Unix timestamps provide approximate alignment; monotonic native intervals are preferred.",
+      "No CPU, memory, foreground, physical handoff, sleep/resume, or assistive-technology qualification in this run."
+    ]
+  },
+  "startup": {
+    "count": 20,
+    "summary_ms": {
+      "median": 3395.469,
+      "p95": 5919.441,
+      "minimum": 2279.045,
+      "maximum": 11922.896
+    },
+    "target_ms": 3000,
+    "startup_target_pass": null,
+    "intervals_ms": {
+      "process_to_observation": {
+        "median": 3395.469,
+        "p95": 5919.441,
+        "minimum": 2279.045,
+        "maximum": 11922.896
+      },
+      "process_to_main": {
+        "median": 44.436,
+        "p95": 94.304,
+        "minimum": 23.924,
+        "maximum": 149.788
+      },
+      "main_to_builder_ready": {
+        "median": 52.625,
+        "p95": 99.946,
+        "minimum": 27.607,
+        "maximum": 103.489
+      },
+      "configured_window": {
+        "median": 1970.154,
+        "p95": 3071.324,
+        "minimum": 1342.503,
+        "maximum": 3462.711
+      },
+      "tray_setup": {
+        "median": 62.096,
+        "p95": 132.087,
+        "minimum": 43.979,
+        "maximum": 311.495
+      },
+      "network_registration": {
+        "median": 16.063,
+        "p95": 36.092,
+        "minimum": 10.628,
+        "maximum": 36.481
+      },
+      "first_status": {
+        "median": 4.36,
+        "p95": 6.58,
+        "minimum": 2.254,
+        "maximum": 7.57
+      },
+      "first_adapters": {
+        "median": 361.306,
+        "p95": 2106.405,
+        "minimum": 197.467,
+        "maximum": 2493.568
+      },
+      "module_to_startup_effect": {
+        "median": 312.9,
+        "p95": 400.7,
+        "minimum": 216.9,
+        "maximum": 448.2
+      },
+      "native_listener_registration": {
+        "median": 49.9,
+        "p95": 92.8,
+        "minimum": 31.6,
+        "maximum": 319.6
+      },
+      "interface_context": {
+        "median": 13.85,
+        "p95": 19.6,
+        "minimum": 8.5,
+        "maximum": 27.9
+      }
+    },
+    "runs": [
+      {
+        "run": 1,
+        "observed_ms": 5196.239,
+        "main_after_creation_ms": 56.632,
+        "document_time_origin_ms": 3070.2,
+        "native_phases_ms": {
+          "adapters_finished": 4574.561,
+          "adapters_started": 4240.871,
+          "builder_ready": 45.011,
+          "interface_context": 4158.415,
+          "main_entered": 0.013,
+          "monitor_ready": 3453.534,
+          "navigation_finished": 3748.222,
+          "navigation_started": 3611.338,
+          "run_ready": 3453.584,
+          "setup_entered": 3116.334,
+          "setup_finished": 3453.535,
+          "status_finished": 4179.663,
+          "status_started": 4173.636,
+          "tray_ready": 3427.829
+        },
+        "document_marks_ms": {
+          "module": 725.9,
+          "transport": 726.7,
+          "effect": 1038.3,
+          "listeners": 1131.1,
+          "context": 1150.7,
+          "settled": 1585.3
+        }
+      },
+      {
+        "run": 2,
+        "observed_ms": 2556.162,
+        "main_after_creation_ms": 42.579,
+        "document_time_origin_ms": 1631.6,
+        "native_phases_ms": {
+          "adapters_finished": 2429.203,
+          "adapters_started": 2231.736,
+          "builder_ready": 40.28,
+          "interface_context": 2201.994,
+          "main_entered": 0.008,
+          "monitor_ready": 1711.989,
+          "navigation_finished": 1910.369,
+          "navigation_started": 1794.06,
+          "run_ready": 1712.128,
+          "setup_entered": 1646.081,
+          "setup_finished": 1711.989,
+          "status_finished": 2217.408,
+          "status_started": 2215.063,
+          "tray_ready": 1696.797
+        },
+        "document_marks_ms": {
+          "module": 305.2,
+          "transport": 306.5,
+          "effect": 569.7,
+          "listeners": 605.9,
+          "context": 617,
+          "settled": 846.8
+        }
+      },
+      {
+        "run": 3,
+        "observed_ms": 2785.838,
+        "main_after_creation_ms": 31.969,
+        "document_time_origin_ms": 1845,
+        "native_phases_ms": {
+          "adapters_finished": 2656.195,
+          "adapters_started": 2356.703,
+          "builder_ready": 31.47,
+          "interface_context": 2330.708,
+          "main_entered": 0.006,
+          "monitor_ready": 1915.059,
+          "navigation_finished": 2045.068,
+          "navigation_started": 1974.899,
+          "run_ready": 1915.154,
+          "setup_entered": 1860.453,
+          "setup_finished": 1915.06,
+          "status_finished": 2343.255,
+          "status_started": 2340.968,
+          "tray_ready": 1904.432
+        },
+        "document_marks_ms": {
+          "module": 223.6,
+          "transport": 224.2,
+          "effect": 481.6,
+          "listeners": 513.2,
+          "context": 521.7,
+          "settled": 855.2
+        }
+      },
+      {
+        "run": 4,
+        "observed_ms": 2842.855,
+        "main_after_creation_ms": 38.051,
+        "document_time_origin_ms": 1947.6,
+        "native_phases_ms": {
+          "adapters_finished": 2700.033,
+          "adapters_started": 2484.944,
+          "builder_ready": 49.745,
+          "interface_context": 2461.073,
+          "main_entered": 0.01,
+          "monitor_ready": 2036.662,
+          "navigation_finished": 2180.571,
+          "navigation_started": 2105.551,
+          "run_ready": 2036.937,
+          "setup_entered": 1968.544,
+          "setup_finished": 2036.662,
+          "status_finished": 2473.428,
+          "status_started": 2470.908,
+          "tray_ready": 2026.026
+        },
+        "document_marks_ms": {
+          "module": 259.5,
+          "transport": 260.6,
+          "effect": 509,
+          "listeners": 545.2,
+          "context": 554.6,
+          "settled": 800.5
+        }
+      },
+      {
+        "run": 5,
+        "observed_ms": 5657.958,
+        "main_after_creation_ms": 26.948,
+        "document_time_origin_ms": 1980.4,
+        "native_phases_ms": {
+          "adapters_finished": 5171.818,
+          "adapters_started": 2678.25,
+          "builder_ready": 27.613,
+          "interface_context": 2644.112,
+          "main_entered": 0.007,
+          "monitor_ready": 2057.527,
+          "navigation_finished": 2224.157,
+          "navigation_started": 2123.123,
+          "run_ready": 2057.637,
+          "setup_entered": 2000.444,
+          "setup_finished": 2057.528,
+          "status_finished": 2661.567,
+          "status_started": 2658.763,
+          "tray_ready": 2044.551
+        },
+        "document_marks_ms": {
+          "module": 256.7,
+          "transport": 257.4,
+          "effect": 632.3,
+          "listeners": 681.5,
+          "context": 695.5,
+          "settled": 3235.8
+        }
+      },
+      {
+        "run": 6,
+        "observed_ms": 2786.99,
+        "main_after_creation_ms": 42.089,
+        "document_time_origin_ms": 1801,
+        "native_phases_ms": {
+          "adapters_finished": 2693.261,
+          "adapters_started": 2449.292,
+          "builder_ready": 44.152,
+          "interface_context": 2421.226,
+          "main_entered": 0.009,
+          "monitor_ready": 1908.497,
+          "navigation_finished": 2074.953,
+          "navigation_started": 1983.109,
+          "run_ready": 1908.62,
+          "setup_entered": 1827.213,
+          "setup_finished": 1908.498,
+          "status_finished": 2436.867,
+          "status_started": 2434.212,
+          "tray_ready": 1894.959
+        },
+        "document_marks_ms": {
+          "module": 308.3,
+          "transport": 309,
+          "effect": 599.9,
+          "listeners": 651.4,
+          "context": 667.3,
+          "settled": 945
+        }
+      },
+      {
+        "run": 7,
+        "observed_ms": 3204.862,
+        "main_after_creation_ms": 61.155,
+        "document_time_origin_ms": 2052.9,
+        "native_phases_ms": {
+          "adapters_finished": 3105.141,
+          "adapters_started": 2698.867,
+          "builder_ready": 61.267,
+          "interface_context": 2666.164,
+          "main_entered": 0.023,
+          "monitor_ready": 2146.725,
+          "navigation_finished": 2335.956,
+          "navigation_started": 2229.094,
+          "run_ready": 2146.853,
+          "setup_entered": 2060.959,
+          "setup_finished": 2146.726,
+          "status_finished": 2684.427,
+          "status_started": 2681.578,
+          "tray_ready": 2132.482
+        },
+        "document_marks_ms": {
+          "module": 332.7,
+          "transport": 334.1,
+          "effect": 620.8,
+          "listeners": 665.8,
+          "context": 681.6,
+          "settled": 1142.1
+        }
+      },
+      {
+        "run": 8,
+        "observed_ms": 2534.974,
+        "main_after_creation_ms": 40.974,
+        "document_time_origin_ms": 1559.4,
+        "native_phases_ms": {
+          "adapters_finished": 2461.837,
+          "adapters_started": 2223.868,
+          "builder_ready": 30.879,
+          "interface_context": 2182.4,
+          "main_entered": 0.007,
+          "monitor_ready": 1679.498,
+          "navigation_finished": 1851.678,
+          "navigation_started": 1763.565,
+          "run_ready": 1679.66,
+          "setup_entered": 1596.133,
+          "setup_finished": 1679.499,
+          "status_finished": 2204.409,
+          "status_started": 2200.15,
+          "tray_ready": 1668.195
+        },
+        "document_marks_ms": {
+          "module": 326,
+          "transport": 326.6,
+          "effect": 592.6,
+          "listeners": 655.7,
+          "context": 669.1,
+          "settled": 965.5
+        }
+      },
+      {
+        "run": 9,
+        "observed_ms": 2279.045,
+        "main_after_creation_ms": 23.924,
+        "document_time_origin_ms": 1344.8,
+        "native_phases_ms": {
+          "adapters_finished": 2157.125,
+          "adapters_started": 1943.636,
+          "builder_ready": 27.607,
+          "interface_context": 1913.814,
+          "main_entered": 0.006,
+          "monitor_ready": 1457.15,
+          "navigation_finished": 1625.596,
+          "navigation_started": 1529.817,
+          "run_ready": 1457.276,
+          "setup_entered": 1370.109,
+          "setup_finished": 1457.151,
+          "status_finished": 1928.721,
+          "status_started": 1926.37,
+          "tray_ready": 1432.376
+        },
+        "document_marks_ms": {
+          "module": 296.2,
+          "transport": 297.3,
+          "effect": 540.8,
+          "listeners": 582.6,
+          "context": 596.7,
+          "settled": 844.8
+        }
+      },
+      {
+        "run": 10,
+        "observed_ms": 2714.896,
+        "main_after_creation_ms": 29.521,
+        "document_time_origin_ms": 1509.9,
+        "native_phases_ms": {
+          "adapters_finished": 2546.072,
+          "adapters_started": 2244.057,
+          "builder_ready": 30.77,
+          "interface_context": 2205.498,
+          "main_entered": 0.008,
+          "monitor_ready": 1646.524,
+          "navigation_finished": 1825.315,
+          "navigation_started": 1721.723,
+          "run_ready": 1646.655,
+          "setup_entered": 1571.651,
+          "setup_finished": 1646.525,
+          "status_finished": 2223.972,
+          "status_started": 2219.014,
+          "tray_ready": 1633.576
+        },
+        "document_marks_ms": {
+          "module": 336.8,
+          "transport": 337.6,
+          "effect": 682.8,
+          "listeners": 718.9,
+          "context": 728.7,
+          "settled": 1078.1
+        }
+      },
+      {
+        "run": 11,
+        "observed_ms": 5004.864,
+        "main_after_creation_ms": 94.304,
+        "document_time_origin_ms": 2752.5,
+        "native_phases_ms": {
+          "adapters_finished": 3928.605,
+          "adapters_started": 3335.69,
+          "builder_ready": 99.946,
+          "interface_context": 3305.007,
+          "main_entered": 0.013,
+          "monitor_ready": 2804.13,
+          "navigation_finished": 2978.447,
+          "navigation_started": 2898.261,
+          "run_ready": 2804.225,
+          "setup_entered": 2744.029,
+          "setup_finished": 2804.13,
+          "status_finished": 3321.028,
+          "status_started": 3315.957,
+          "tray_ready": 2791.224
+        },
+        "document_marks_ms": {
+          "module": 314.5,
+          "transport": 315,
+          "effect": 590.8,
+          "listeners": 639.8,
+          "context": 650.7,
+          "settled": 1280.9
+        }
+      },
+      {
+        "run": 12,
+        "observed_ms": 3771.832,
+        "main_after_creation_ms": 65.345,
+        "document_time_origin_ms": 2032.3,
+        "native_phases_ms": {
+          "adapters_finished": 3247.964,
+          "adapters_started": 2678.067,
+          "builder_ready": 64.583,
+          "interface_context": 2632.959,
+          "main_entered": 0.012,
+          "monitor_ready": 2103.222,
+          "navigation_finished": 2269.769,
+          "navigation_started": 2178.538,
+          "run_ready": 2103.327,
+          "setup_entered": 2032.059,
+          "setup_finished": 2103.223,
+          "status_finished": 2659.133,
+          "status_started": 2652.553,
+          "tray_ready": 2086.381
+        },
+        "document_marks_ms": {
+          "module": 294.7,
+          "transport": 295.5,
+          "effect": 608.1,
+          "listeners": 658.8,
+          "context": 671.8,
+          "settled": 1292.8
+        }
+      },
+      {
+        "run": 13,
+        "observed_ms": 5919.441,
+        "main_after_creation_ms": 149.788,
+        "document_time_origin_ms": 3136.9,
+        "native_phases_ms": {
+          "adapters_finished": 4452.238,
+          "adapters_started": 3928.584,
+          "builder_ready": 103.489,
+          "interface_context": 3894.523,
+          "main_entered": 0.016,
+          "monitor_ready": 3201.667,
+          "navigation_finished": 3494.829,
+          "navigation_started": 3390.565,
+          "run_ready": 3201.82,
+          "setup_entered": 3087.286,
+          "setup_finished": 3201.668,
+          "status_finished": 3911.643,
+          "status_started": 3906.884,
+          "tray_ready": 3165.186
+        },
+        "document_marks_ms": {
+          "module": 499.9,
+          "transport": 500.7,
+          "effect": 840.2,
+          "listeners": 900.1,
+          "context": 912.5,
+          "settled": 1481.8
+        }
+      },
+      {
+        "run": 14,
+        "observed_ms": 3125.992,
+        "main_after_creation_ms": 43.105,
+        "document_time_origin_ms": 1942.5,
+        "native_phases_ms": {
+          "adapters_finished": 3016.435,
+          "adapters_started": 2710.558,
+          "builder_ready": 55.562,
+          "interface_context": 2677.967,
+          "main_entered": 0.01,
+          "monitor_ready": 2067.073,
+          "navigation_finished": 2261.904,
+          "navigation_started": 2157.346,
+          "run_ready": 2067.227,
+          "setup_entered": 1977.145,
+          "setup_finished": 2067.073,
+          "status_finished": 2695.728,
+          "status_started": 2692.004,
+          "tray_ready": 2030.981
+        },
+        "document_marks_ms": {
+          "module": 351.9,
+          "transport": 352.7,
+          "effect": 703.2,
+          "listeners": 768.3,
+          "context": 783.3,
+          "settled": 1128.2
+        }
+      },
+      {
+        "run": 15,
+        "observed_ms": 11922.896,
+        "main_after_creation_ms": 61.69,
+        "document_time_origin_ms": 3556.4,
+        "native_phases_ms": {
+          "adapters_finished": 6793.052,
+          "adapters_started": 4686.647,
+          "builder_ready": 86.535,
+          "interface_context": 4608.883,
+          "main_entered": 0.014,
+          "monitor_ready": 3647.32,
+          "navigation_finished": 3870.791,
+          "navigation_started": 3759.241,
+          "run_ready": 3647.502,
+          "setup_entered": 3549.246,
+          "setup_finished": 3647.321,
+          "status_finished": 4626.794,
+          "status_started": 4621.838,
+          "tray_ready": 3617.075
+        },
+        "document_marks_ms": {
+          "module": 370.5,
+          "transport": 371,
+          "effect": 771.2,
+          "listeners": 1090.8,
+          "context": 1118.7,
+          "settled": 4524
+        }
+      },
+      {
+        "run": 16,
+        "observed_ms": 3026.619,
+        "main_after_creation_ms": 37.392,
+        "document_time_origin_ms": 1907.8,
+        "native_phases_ms": {
+          "adapters_finished": 2903.664,
+          "adapters_started": 2657.65,
+          "builder_ready": 47.877,
+          "interface_context": 2623.541,
+          "main_entered": 0.009,
+          "monitor_ready": 2042.032,
+          "navigation_finished": 2248.484,
+          "navigation_started": 2140.861,
+          "run_ready": 2042.179,
+          "setup_entered": 1939.05,
+          "setup_finished": 2042.033,
+          "status_finished": 2641.559,
+          "status_started": 2636.824,
+          "tray_ready": 2017.248
+        },
+        "document_marks_ms": {
+          "module": 368.4,
+          "transport": 370.1,
+          "effect": 697.1,
+          "listeners": 744.1,
+          "context": 757.8,
+          "settled": 1044.4
+        }
+      },
+      {
+        "run": 17,
+        "observed_ms": 4162.618,
+        "main_after_creation_ms": 45.766,
+        "document_time_origin_ms": 2308.5,
+        "native_phases_ms": {
+          "adapters_finished": 3734.407,
+          "adapters_started": 3075.637,
+          "builder_ready": 55.506,
+          "interface_context": 3039.171,
+          "main_entered": 0.012,
+          "monitor_ready": 2447.597,
+          "navigation_finished": 2660.248,
+          "navigation_started": 2554.92,
+          "run_ready": 2447.744,
+          "setup_entered": 2362.563,
+          "setup_finished": 2447.598,
+          "status_finished": 3058.383,
+          "status_started": 3053.922,
+          "tray_ready": 2427.47
+        },
+        "document_marks_ms": {
+          "module": 387,
+          "transport": 388.1,
+          "effect": 716.2,
+          "listeners": 766.8,
+          "context": 781,
+          "settled": 1484
+        }
+      },
+      {
+        "run": 18,
+        "observed_ms": 4801.421,
+        "main_after_creation_ms": 50.556,
+        "document_time_origin_ms": 2578.8,
+        "native_phases_ms": {
+          "adapters_finished": 3846.587,
+          "adapters_started": 3301.48,
+          "builder_ready": 85.512,
+          "interface_context": 3260.394,
+          "main_entered": 0.016,
+          "monitor_ready": 2668.822,
+          "navigation_finished": 2879.17,
+          "navigation_started": 2779.014,
+          "run_ready": 2668.927,
+          "setup_entered": 2596.905,
+          "setup_finished": 2668.823,
+          "status_finished": 3283.253,
+          "status_started": 3277.738,
+          "tray_ready": 2653.536
+        },
+        "document_marks_ms": {
+          "module": 340.3,
+          "transport": 341.1,
+          "effect": 659.8,
+          "listeners": 724.1,
+          "context": 739.2,
+          "settled": 1330.4
+        }
+      },
+      {
+        "run": 19,
+        "observed_ms": 3586.075,
+        "main_after_creation_ms": 65.923,
+        "document_time_origin_ms": 2379.9,
+        "native_phases_ms": {
+          "adapters_finished": 3466.969,
+          "adapters_started": 2848.047,
+          "builder_ready": 78.878,
+          "interface_context": 2821.664,
+          "main_entered": 0.013,
+          "monitor_ready": 2430.64,
+          "navigation_finished": 2571.416,
+          "navigation_started": 2500.881,
+          "run_ready": 2430.746,
+          "setup_entered": 2359.858,
+          "setup_finished": 2430.641,
+          "status_finished": 2833.622,
+          "status_started": 2831.368,
+          "tray_ready": 2412.48
+        },
+        "document_marks_ms": {
+          "module": 250.3,
+          "transport": 250.8,
+          "effect": 467.2,
+          "listeners": 501.5,
+          "context": 511.4,
+          "settled": 1165.2
+        }
+      },
+      {
+        "run": 20,
+        "observed_ms": 4964.926,
+        "main_after_creation_ms": 50.272,
+        "document_time_origin_ms": 2144.8,
+        "native_phases_ms": {
+          "adapters_finished": 3602.551,
+          "adapters_started": 3213.629,
+          "builder_ready": 64.93,
+          "interface_context": 3163.064,
+          "main_entered": 0.011,
+          "monitor_ready": 2362.3,
+          "navigation_finished": 2625.663,
+          "navigation_started": 2517.568,
+          "run_ready": 2362.425,
+          "setup_entered": 2212.823,
+          "setup_finished": 2362.301,
+          "status_finished": 3190.39,
+          "status_started": 3182.82,
+          "tray_ready": 2344.91
+        },
+        "document_marks_ms": {
+          "module": 521.1,
+          "transport": 522,
+          "effect": 969.3,
+          "listeners": 1059.3,
+          "context": 1075.1,
+          "settled": 1529
+        }
+      }
+    ]
+  },
+  "cleanup": {
+    "finished": true,
+    "native_dns_unchanged": true,
+    "safe_service_removal": true,
+    "service_absent": true,
+    "operator_group_absent": true,
+    "temporary_account_removed": true,
+    "installation_removed": true,
+    "active_data_removed": true,
+    "uninstall_registration_removed": true,
+    "measurement_error_absent": true,
+    "cleanup_error_absent": true,
+    "private_test_data_archived": true,
+    "archive": "Retained locally with administrator-only write access; no account identifiers, adapter settings, raw journals, paths, or profiles published."
+  }
+}
