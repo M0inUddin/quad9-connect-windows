@@ -5,6 +5,7 @@ type StartupWindow = Window & {
   startupTest: {
     calls: string[];
     release: ((error?: string) => void)[];
+    invalidationDepth: number | null;
     emit: (event: string) => void;
   };
 };
@@ -17,6 +18,7 @@ test.beforeEach(async ({ page }) => {
     const bridge: StartupWindow["startupTest"] = {
       calls: [],
       release: [],
+      invalidationDepth: null,
       emit(event) {
         listeners
           .get(event)
@@ -60,9 +62,22 @@ test.beforeEach(async ({ page }) => {
           const request = args.request;
           bridge.calls.push(request.command.type);
           await new Promise<void>((resolve, reject) => {
-            bridge.release.push((error) =>
-              error ? reject(new Error(error)) : resolve(),
-            );
+            bridge.release.push((error) => {
+              if (error) reject(new Error(error));
+              else resolve();
+              if (
+                request.command.type === "list_adapters" &&
+                bridge.invalidationDepth !== null
+              ) {
+                const depth = bridge.invalidationDepth;
+                bridge.invalidationDepth = null;
+                const enqueue = (remaining: number) => {
+                  if (remaining) queueMicrotask(() => enqueue(remaining - 1));
+                  else bridge.emit("service-changed");
+                };
+                enqueue(depth);
+              }
+            });
           });
           const result: Result =
             request.command.type === "get_status"
@@ -172,4 +187,53 @@ test("a current startup failure ends loading and remains visible", async ({
   await expect(page.getByRole("status")).toHaveText("Service unavailable");
   await expect(page.getByText("Current connection failure")).toBeVisible();
   await calls(page, ["get_status"]);
+});
+
+test("continuous startup invalidation stops with a reconnect action", async ({
+  page,
+}) => {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await calls(page, Array(attempt + 1).fill("get_status"));
+    await invalidate(page);
+    await release(page, attempt);
+  }
+  await expect(page.getByRole("status")).toHaveText("Service unavailable");
+  await expect(
+    page.getByText(
+      "The network keeps changing. Wait for it to settle, then reconnect.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Reconnect to service", exact: true }),
+  ).toBeEnabled();
+  await calls(page, ["get_status", "get_status", "get_status"]);
+});
+
+test("promise-delivered invalidations survive every startup handoff boundary", async ({
+  page,
+}) => {
+  // Sweep adjacent promise turns around adapter completion, including the
+  // handoff from startup reads to normal event refreshes.
+  for (const depth of [0, 1, 2, 3, 4, 5, 6, 7, 8]) {
+    if (depth) {
+      await page.reload();
+      await calls(page, ["get_status"]);
+    }
+    await release(page, 0);
+    await calls(page, ["get_status", "list_adapters"]);
+    await page.evaluate((depth) => {
+      (window as StartupWindow).startupTest.invalidationDepth = depth;
+    }, depth);
+    await release(page, 1);
+    await calls(page, ["get_status", "list_adapters", "get_status"]);
+    await release(page, 2);
+    await calls(page, [
+      "get_status",
+      "list_adapters",
+      "get_status",
+      "list_adapters",
+    ]);
+    await release(page, 3);
+    await expect(page.getByRole("status")).toHaveText("Ready when you are");
+  }
 });
