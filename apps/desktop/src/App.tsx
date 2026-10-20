@@ -108,7 +108,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
       return false;
     }
   });
-  const contentHeading = useRef<HTMLHeadingElement>(null);
+  const currentNavigation = useRef<HTMLButtonElement>(null);
   const [busy, setBusy] = useState<string | null>("Reading service state");
   const [error, setError] = useState<string | null>(null);
   const [monitorUnavailable, setMonitorUnavailable] = useState(false);
@@ -550,6 +550,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         {(["connection", "diagnostics", "settings"] as View[]).map((item) => (
           <button
             key={item}
+            ref={view === item ? currentNavigation : undefined}
             aria-current={view === item ? "page" : undefined}
             onClick={() => setView(item)}
           >
@@ -578,7 +579,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
                 } catch {
                   /* Keep dismissal for this document when storage is blocked. */
                 }
-                contentHeading.current?.focus({ preventScroll: true });
+                currentNavigation.current?.focus({ preventScroll: true });
               }}
             >
               Got it
@@ -639,9 +640,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
                       ? "CONNECTION NEEDED"
                       : "REVIEW REQUIRED"}
               </span>
-              <h2 id="state-heading" ref={contentHeading} tabIndex={-1}>
-                {copy[state][0]}
-              </h2>
+              <h2 id="state-heading">{copy[state][0]}</h2>
               <p>{copy[state][1]}</p>
             </section>
             <section
@@ -732,9 +731,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         {view === "diagnostics" && (
           <section className="secondary-view">
             <span className="eyebrow">CHECK THE CURRENT PATH</span>
-            <h2 ref={contentHeading} tabIndex={-1}>
-              Diagnostics
-            </h2>
+            <h2>Diagnostics</h2>
             <p className="intro">
               Check the Windows system resolver and direct Quad9 reachability.
             </p>
@@ -842,9 +839,7 @@ export function App({ send, preview }: { send: Transport; preview: boolean }) {
         {view === "settings" && (
           <section className="secondary-view">
             <span className="eyebrow">MAKE IT YOURS</span>
-            <h2 ref={contentHeading} tabIndex={-1}>
-              Settings
-            </h2>
+            <h2>Settings</h2>
             <h3 className="section-label">Appearance</h3>
             <fieldset className="theme-picker">
               <legend className="sr-only">Color theme</legend>

@@ -169,7 +169,7 @@ try {
       await trayNotice().getByRole("button", { name: "Got it", exact: true }).focus();
       await page.keyboard.press("Enter");
       await expect(trayNotice()).toHaveCount(0);
-      await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeFocused();
+      await expect(page.getByRole("button", { name: "Settings", exact: true })).toBeFocused();
 
       // Reloading preserves the native window but creates a new document. Its
       // first retention sequence must work, and the old document cannot release it.

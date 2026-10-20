@@ -58,10 +58,6 @@ label:has(input:focus-visible) {
   outline: 3px solid var(--accent);
   outline-offset: 3px;
 }
-h2[tabindex="-1"]:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 3px;
-}
 button {
   transition: background 0.15s ease;
 }

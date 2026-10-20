@@ -57,7 +57,7 @@ test("first-use tray guidance keeps the primary action visible and preserves pre
   await page.keyboard.press("Enter");
   await expect(notice).toHaveCount(0);
   await expect(
-    page.getByRole("heading", { name: "Ready when you are", exact: true }),
+    page.getByRole("button", { name: "Connection", exact: true }),
   ).toBeFocused();
   await expectOnlyReads(page);
   await page.reload();

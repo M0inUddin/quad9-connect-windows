@@ -177,6 +177,24 @@ test("startup keeps settings responsive while the native read is pending", async
   await expect(page.getByRole("status")).toHaveText("Ready when you are");
 });
 
+test("dismissing tray guidance during startup returns focus to navigation", async ({
+  page,
+}) => {
+  const notice = page.getByRole("note", { name: "Closing and quitting Quad9" });
+  await notice.getByRole("button", { name: "Got it", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(notice).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Connection", exact: true }),
+  ).toBeFocused();
+  await expect(page.getByRole("status")).toHaveText("Reading service state");
+  await calls(page, ["get_status"]);
+  await release(page, 0);
+  await calls(page, ["get_status", "list_adapters"]);
+  await release(page, 1);
+  await expect(page.getByRole("status")).toHaveText("Ready when you are");
+});
+
 test("a network event during adapter inspection requires a complete fresh read", async ({
   page,
 }) => {
