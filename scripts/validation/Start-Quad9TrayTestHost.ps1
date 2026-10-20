@@ -82,7 +82,20 @@ try {
                 $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
                 $listeners = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
                     Where-Object { $_.OwningProcess -in $counters.ProcessIds } | Select-Object LocalAddress, LocalPort, OwningProcess)
-                @{ processes = $processes; listeners = $listeners; main_window = $native.MainWindowTitle; elevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } |
+                $policies = @{}
+                foreach ($hive in @([Microsoft.Win32.Registry]::LocalMachine, [Microsoft.Win32.Registry]::CurrentUser)) {
+                    foreach ($path in @('Software\Policies\Microsoft\Edge', 'Software\Policies\Microsoft\Edge\WebView2')) {
+                        $key = $hive.OpenSubKey($path)
+                        if ($key) {
+                            try {
+                                foreach ($value in @('RemoteDebuggingAllowed', 'DeveloperToolsAvailability')) {
+                                    $policies["$($hive.Name)\$path\$value"] = $key.GetValue($value)
+                                }
+                            } finally { $key.Dispose() }
+                        }
+                    }
+                }
+                @{ processes = $processes; listeners = $listeners; debugging_policies = $policies; main_window = $native.MainWindowTitle; elevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } |
                     ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $env:QUAD9_TRAY_DIAGNOSTICS -Encoding UTF8
             } catch { Write-Warning "Could not collect owned-process diagnostics: $_" }
         }

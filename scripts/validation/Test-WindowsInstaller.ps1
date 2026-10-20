@@ -122,35 +122,16 @@ try {
     $nativeAcl = Get-Acl -LiteralPath $nativeOutput
     $nativeAcl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($user.SID, 'Modify', 'ContainerInherit, ObjectInherit', 'None', 'Allow'))
     Set-Acl -LiteralPath $nativeOutput -AclObject $nativeAcl
-    $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
-    $listener.Start()
-    try { $debugPort = $listener.LocalEndpoint.Port } finally { $listener.Stop() }
-    $nativeArguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Node "{1}" -Desktop "{2}" -Output "{3}" -DebugPort {4}' -f
+    $nativeArguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Node "{1}" -Desktop "{2}" -Output "{3}"' -f
         (Join-Path $PSScriptRoot 'Invoke-NativeStartupTest.ps1'), (Get-Command node).Source,
-        (Join-Path (Current-Directory) 'quad9-desktop.exe'), $nativeOutput, $debugPort
-    # Runtime 150+ hardens environment overrides. Use the documented machine
-    # policy for this executable only, confined to this disposable VM/test.
-    # https://github.com/MicrosoftEdge/WebView2Feedback/issues/5640
-    $debugKey = [Microsoft.Win32.Registry]::LocalMachine.CreateSubKey('Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments')
-    $debugName = 'quad9-desktop.exe'
-    $hadDebugPolicy = $debugName -in $debugKey.GetValueNames()
-    $previousDebugPolicy = $debugKey.GetValue($debugName, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-    $previousDebugKind = if ($hadDebugPolicy) { $debugKey.GetValueKind($debugName) } else { $null }
-    $nativeUser = $null
+        (Join-Path (Current-Directory) 'quad9-desktop.exe'), $nativeOutput
+    $nativeUser = Start-Process -FilePath $powershell -ArgumentList $nativeArguments -Credential $credential -LoadUserProfile -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $output 'native-startup.out') -RedirectStandardError (Join-Path $output 'native-startup.err')
     try {
-        $debugKey.SetValue($debugName, ('--remote-debugging-port={0} --remote-debugging-address=127.0.0.1 --enable-logging --log-file="{1}"' -f $debugPort, (Join-Path $nativeOutput 'webview.log')), [Microsoft.Win32.RegistryValueKind]::String)
-        $nativeUser = Start-Process -FilePath $powershell -ArgumentList $nativeArguments -Credential $credential -LoadUserProfile -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $output 'native-startup.out') -RedirectStandardError (Join-Path $output 'native-startup.err')
         if ($nativeUser.ExitCode -ne 0) {
             Get-Content -LiteralPath (Join-Path $output 'native-startup.err') | Write-Host
             throw 'Installed native UI Windows startup validation failed.'
         }
-    } finally {
-        if ($nativeUser) { $nativeUser.Dispose() }
-        try {
-            if ($hadDebugPolicy) { $debugKey.SetValue($debugName, $previousDebugPolicy, $previousDebugKind) }
-            else { $debugKey.DeleteValue($debugName, $false) }
-        } finally { $debugKey.Dispose() }
-    }
+    } finally { $nativeUser.Dispose() }
     # A second user's task exercises installer updates and removal across users.
     $startupModule = Import-Module (Join-Path (Current-Directory) 'InstallerLifecycle.psm1') -Force -PassThru
     & $startupModule { param($Desktop); $null = Invoke-Quad9StartupPreference $Desktop -Mode window -Write } (Join-Path (Current-Directory) 'quad9-desktop.exe')

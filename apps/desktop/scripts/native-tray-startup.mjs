@@ -33,19 +33,9 @@ if (
   );
 await mkdir(output, { recursive: true });
 const profile = await mkdtemp(join(output, "profile-"));
-const portOption = process.argv.find((argument) =>
-  argument.startsWith("--debug-port="),
-);
-const port = portOption
-  ? Number(portOption.slice("--debug-port=".length))
-  : await freePort();
-if (
-  portOption &&
-  (!installedStartup || !Number.isInteger(port) || port < 1024 || port > 65535)
-)
-  throw new Error(
-    "An explicit debugging port requires the hosted installed-startup test and a valid port.",
-  );
+const runtimeAssignedPort =
+  installedStartup || process.argv.includes("--runtime-debug-port");
+const requestedPort = runtimeAssignedPort ? 0 : await freePort();
 const report = {
   schema: 1,
   passed: false,
@@ -57,6 +47,18 @@ const report = {
   method:
     "Functional tray launch, cumulative owned-job process accounting, repeated tray and invalid launches, then normal second-launch activation through the production single-instance callback. No DNS mutation. Optional startup-preference writes are restricted to the disposable hosted installer VM. Not a resource-budget or startup-speed qualification.",
 };
+// Recreated browsers may publish a different port. Resolve it for each attach.
+const activePortFile = join(profile, "EBWebView", "DevToolsActivePort");
+const port = runtimeAssignedPort
+  ? async () => {
+      const value = Number(
+        (await readFile(activePortFile, "utf8")).split(/\r?\n/)[0],
+      );
+      if (!Number.isInteger(value) || value < 1 || value > 65535)
+        throw new Error("WebView2 has not published a valid debugging port.");
+      return value;
+    }
+  : requestedPort;
 const launcher = spawn(
   "powershell.exe",
   [
@@ -78,7 +80,7 @@ const launcher = spawn(
       ...process.env,
       WEBVIEW2_USER_DATA_FOLDER: profile,
       QUAD9_TRAY_DIAGNOSTICS: join(output, "native-processes.json"),
-      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port} --remote-debugging-address=127.0.0.1 --enable-logging --log-file="${join(output, "webview.log")}"`,
+      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${requestedPort} --remote-debugging-address=127.0.0.1 --enable-logging --v=1 --log-file="${join(output, "webview.log")}"`,
     },
   },
 );
@@ -255,6 +257,9 @@ try {
     "Tray startup passed: no initial WebView, read-only status, repeated tray launch, normal activation, and close/reopen.",
   );
 } finally {
+  report.runtime_debugging_port = await readFile(activePortFile, "utf8").catch(
+    () => null,
+  );
   await browser?.close().catch(() => {});
   launcher.stdin.end();
   await exited;

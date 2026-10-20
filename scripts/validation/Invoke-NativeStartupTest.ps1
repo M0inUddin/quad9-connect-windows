@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Runs inside the disposable installer's fresh standard-user token.
-param([Parameter(Mandatory)][string] $Node, [Parameter(Mandatory)][string] $Desktop, [Parameter(Mandatory)][string] $Output,
-    [Parameter(Mandatory)][ValidateRange(1024, 65535)][int] $DebugPort)
+param([Parameter(Mandatory)][string] $Node, [Parameter(Mandatory)][string] $Desktop, [Parameter(Mandatory)][string] $Output)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
@@ -10,6 +9,6 @@ $env:TMP = $env:TEMP
 New-Item -ItemType Directory -Path $env:TEMP -Force | Out-Null
 Push-Location (Join-Path $repo 'apps/desktop')
 try {
-    & $Node scripts/native-tray-startup.mjs $Desktop $Output --installed-startup "--debug-port=$DebugPort"
+    & $Node scripts/native-tray-startup.mjs $Desktop $Output --installed-startup
     exit $LASTEXITCODE
 } finally { Pop-Location }

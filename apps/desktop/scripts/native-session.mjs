@@ -24,9 +24,13 @@ export async function connect(port, child) {
         `Desktop process exited ${child.exitCode}. Close any other Quad9 interface before testing.`,
       );
     try {
-      browser ??= await chromium.connectOverCDP(`http://127.0.0.1:${port}`, {
-        timeout: 500,
-      });
+      const currentPort = typeof port === "function" ? await port() : port;
+      browser ??= await chromium.connectOverCDP(
+        `http://127.0.0.1:${currentPort}`,
+        {
+          timeout: 500,
+        },
+      );
       const pages = browser.contexts().flatMap((c) => c.pages());
       observedPages = pages.map((page) => page.url());
       const page = pages.find((p) => /tauri[.:]/.test(p.url()));
