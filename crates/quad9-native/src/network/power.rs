@@ -142,10 +142,8 @@ mod tests {
     fn notify(id: usize, event: u32) {
         // SAFETY: The callback never dereferences Context or Setting. This
         // exercises the production callback without changing system power state.
-        assert_eq!(
-            unsafe { power_changed(id as *const c_void, event, ptr::null()) },
-            0
-        );
+        let code = unsafe { power_changed(id as *const c_void, event, ptr::null()) };
+        assert_eq!(code, 0);
     }
 
     #[test]
