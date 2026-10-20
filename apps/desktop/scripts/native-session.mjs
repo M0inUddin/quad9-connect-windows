@@ -47,8 +47,8 @@ export async function connect(port, child) {
     "Native startup exceeded 30 seconds. Run the UI harness unelevated; elevated WebView2 hosts ignore diagnostic environment flags.",
   );
 }
-export async function reopen(executable, port, child) {
-  const second = spawn(executable, [], { windowsHide: true, stdio: "ignore" });
+export async function launchSecond(executable, args = []) {
+  const second = spawn(executable, args, { windowsHide: true, stdio: "ignore" });
   await new Promise((ok, reject) => {
     const timer = setTimeout(() => {
       second.kill();
@@ -65,6 +65,9 @@ export async function reopen(executable, port, child) {
       code === 0 ? ok() : reject(new Error(`Second launch exited ${code}`));
     });
   });
+}
+export async function reopen(executable, port, child) {
+  await launchSecond(executable);
   return connect(port, child);
 }
 export async function closeWindow(page) {

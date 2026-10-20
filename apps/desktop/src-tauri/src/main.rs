@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod launch;
 mod startup;
+use launch::LaunchMode;
 use quad9_service::client::{ClientCoordinator, ObservedResponse};
 use quad9_service::protocol::{Command, Request, Response, ResultBody};
 use startup::{Phase, StartupTimeline};
@@ -574,10 +576,22 @@ fn startup_timeline(app: tauri::AppHandle) -> startup::Snapshot {
 
 fn main() {
     let timeline = StartupTimeline::new();
+    let launch = LaunchMode::parse(std::env::args_os().skip(1)).unwrap_or_else(|usage| {
+        eprintln!("{usage}");
+        std::process::exit(2);
+    });
+    let mut context = tauri::generate_context!();
+    if launch == LaunchMode::Tray {
+        // Skip creation entirely, including WebView2. Keep the visible window
+        // configuration so Open application can build it through show_window.
+        context.config_mut().app.windows[0].create = false;
+    }
     let app = tauri::Builder::default()
         .manage(timeline.clone())
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            show(app, "connection")
+        .plugin(tauri_plugin_single_instance::init(|app, arguments, _| {
+            if LaunchMode::parse(arguments.iter().skip(1)) == Ok(LaunchMode::Window) {
+                show(app, "connection");
+            }
         }))
         .invoke_handler(tauri::generate_handler![
             service_request,
@@ -597,7 +611,7 @@ fn main() {
                     });
             }
         })
-        .setup(|app| {
+        .setup(move |app| {
             app.state::<StartupTimeline>().mark(Phase::SetupEntered);
             let title = MenuItem::new(app, "Quad9 Connect for Windows", false, None::<&str>)?;
             let status = MenuItem::new(app, "Reading service state", false, None::<&str>)?;
@@ -702,6 +716,19 @@ fn main() {
             app.state::<StartupTimeline>().mark(Phase::TrayReady);
             observe_network(app.handle().clone())?;
             app.state::<StartupTimeline>().mark(Phase::MonitorReady);
+            if launch == LaunchMode::Tray {
+                // With no frontend to request it, read status once after native
+                // subscriptions are armed. Never enable DNS or run diagnostics.
+                let app = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = service_request(app.clone(), request(Command::GetStatus)).await;
+                    // A completed read cannot repair a failed native subscription.
+                    // Keep that warning visible when startup has no frontend.
+                    if network_monitor_error(app.clone()).is_some() {
+                        unknown_tray(&app, "Automatic checks unavailable");
+                    }
+                });
+            }
             app.state::<StartupTimeline>().mark(Phase::SetupFinished);
             Ok(())
         })
@@ -716,7 +743,7 @@ fn main() {
                 hide_interface(window.clone());
             }
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("Could not start Quad9 Connect");
     timeline.mark(Phase::BuilderReady);
     app.run(|app, event| {

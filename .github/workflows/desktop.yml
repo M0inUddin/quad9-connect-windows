@@ -2,10 +2,10 @@ name: Desktop UI
 
 on:
   pull_request:
-    paths: ['apps/desktop/**', 'crates/**', 'scripts/validation/Measure-Quad9Resources.ps1', 'scripts/validation/*Resource*', '.github/workflows/desktop.yml']
+    paths: ['apps/desktop/**', 'crates/**', 'scripts/validation/Measure-Quad9Resources.ps1', 'scripts/validation/*Resource*', 'scripts/validation/*Tray*', '.github/workflows/desktop.yml']
   push:
     branches: [main]
-    paths: ['apps/desktop/**', 'crates/**', 'scripts/validation/Measure-Quad9Resources.ps1', 'scripts/validation/*Resource*', '.github/workflows/desktop.yml']
+    paths: ['apps/desktop/**', 'crates/**', 'scripts/validation/Measure-Quad9Resources.ps1', 'scripts/validation/*Resource*', 'scripts/validation/*Tray*', '.github/workflows/desktop.yml']
 
 permissions:
   contents: read
@@ -63,6 +63,9 @@ jobs:
       - name: Check native and document startup phase collection
         working-directory: apps/desktop
         run: node scripts/native-startup.mjs src-tauri/target/debug/quad9-desktop.exe 1
+      - name: Check tray startup without creating a WebView
+        working-directory: apps/desktop
+        run: node scripts/native-tray-startup.mjs src-tauri/target/debug/quad9-desktop.exe
       - name: Validate native accessibility and tray window recreation
         working-directory: apps/desktop
         run: node scripts/native-validation.mjs src-tauri/target/debug/quad9-desktop.exe
@@ -97,4 +100,5 @@ jobs:
             output/playwright/native-validation/*.png
             output/playwright/native-resources/*.json
             output/playwright/native-startup/*.json
+            output/playwright/native-tray-startup/*.json
           retention-days: 7
