@@ -65,6 +65,7 @@ const launcher = spawn(
     env: {
       ...process.env,
       WEBVIEW2_USER_DATA_FOLDER: profile,
+      QUAD9_TRAY_DIAGNOSTICS: join(output, "native-processes.json"),
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port} --remote-debugging-address=127.0.0.1`,
     },
   },

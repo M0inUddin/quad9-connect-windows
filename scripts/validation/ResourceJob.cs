@@ -2,6 +2,7 @@
 // Test harness only. No CPU, memory, priority, UI, or breakaway limits are set.
 using System;
 using System.ComponentModel;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -39,21 +40,32 @@ public sealed class Quad9ResourceJob : IDisposable {
     [DllImport("kernel32.dll")] static extern bool TerminateProcess(IntPtr process, uint code);
     [DllImport("kernel32.dll")] static extern bool TerminateJobObject(IntPtr job, uint code);
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetHandleInformation(IntPtr handle, uint mask, uint flags);
     [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool IsProcessInJob(IntPtr process, IntPtr job, out bool member);
     IntPtr job;
     public uint ProcessId { get; private set; }
-    public Quad9ResourceJob(string executable, string arguments, string name) {
+    public Quad9ResourceJob(string executable, string arguments, string name) : this(executable, arguments, name, null) { }
+    public Quad9ResourceJob(string executable, string arguments, string name, string errorPath) {
         job = CreateJobObject(IntPtr.Zero, name);
         int error = Marshal.GetLastWin32Error();
         if (job == IntPtr.Zero) throw new Win32Exception(error);
         if (error == 183) { CloseHandle(job); job = IntPtr.Zero; throw new InvalidOperationException("Job name already exists."); }
         ProcessInfo process = new ProcessInfo();
+        FileStream output = null, input = null;
         try {
             Startup startup = new Startup(); startup.cb = Marshal.SizeOf(typeof(Startup));
+            if (errorPath != null) {
+                output = new FileStream(errorPath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+                input = new FileStream(errorPath + ".stdin", FileMode.Create, FileAccess.ReadWrite, FileShare.ReadWrite);
+                startup.output = output.SafeFileHandle.DangerousGetHandle(); startup.error = startup.output;
+                startup.input = input.SafeFileHandle.DangerousGetHandle(); startup.flags |= 0x100; // STARTF_USESTDHANDLES
+                if (!SetHandleInformation(startup.output, 1, 1) || !SetHandleInformation(startup.input, 1, 1))
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
             // Assign before any application code runs, so no child can be missed.
             if (!CreateProcess(executable, new StringBuilder("\"" + executable + "\" " + arguments),
-                IntPtr.Zero, IntPtr.Zero, false, 4, IntPtr.Zero, null, ref startup, out process))
+                IntPtr.Zero, IntPtr.Zero, errorPath != null, 4, IntPtr.Zero, null, ref startup, out process))
                 throw new Win32Exception(Marshal.GetLastWin32Error());
             if (!AssignProcessToJobObject(job, process.process)) throw new Win32Exception(Marshal.GetLastWin32Error());
             ProcessId = process.pid;
@@ -62,6 +74,8 @@ public sealed class Quad9ResourceJob : IDisposable {
             if (process.process != IntPtr.Zero) TerminateProcess(process.process, 1);
             Dispose(); throw;
         } finally {
+            if (output != null) output.Dispose();
+            if (input != null) input.Dispose();
             if (process.thread != IntPtr.Zero) CloseHandle(process.thread);
             if (process.process != IntPtr.Zero) CloseHandle(process.process);
         }

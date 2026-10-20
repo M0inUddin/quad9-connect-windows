@@ -16,6 +16,8 @@ export async function freePort() {
 export async function connect(port, child) {
   const deadline = Date.now() + 30000;
   let browser;
+  let lastError = "No debugging endpoint observed.";
+  let observedPages = [];
   while (Date.now() < deadline) {
     if (child.exitCode !== null)
       throw new Error(
@@ -25,10 +27,9 @@ export async function connect(port, child) {
       browser ??= await chromium.connectOverCDP(`http://127.0.0.1:${port}`, {
         timeout: 500,
       });
-      const page = browser
-        .contexts()
-        .flatMap((c) => c.pages())
-        .find((p) => /tauri[.:]/.test(p.url()));
+      const pages = browser.contexts().flatMap((c) => c.pages());
+      observedPages = pages.map((page) => page.url());
+      const page = pages.find((p) => /tauri[.:]/.test(p.url()));
       if (page) {
         page.setDefaultTimeout(10000);
         await page
@@ -37,18 +38,22 @@ export async function connect(port, child) {
           .waitFor({ state: "attached" });
         return { browser, page };
       }
-    } catch {
+    } catch (error) {
+      lastError = String(error).slice(-2000);
       await browser?.close().catch(() => {});
       browser = undefined;
     }
     await delay(50);
   }
   throw new Error(
-    "Native startup exceeded 30 seconds. Run the UI harness unelevated; elevated WebView2 hosts ignore diagnostic environment flags.",
+    `Native startup exceeded 30 seconds. Last connection error: ${lastError}. Observed pages: ${JSON.stringify(observedPages)}. Run the UI harness unelevated.`,
   );
 }
 export async function launchSecond(executable, args = []) {
-  const second = spawn(executable, args, { windowsHide: true, stdio: "ignore" });
+  const second = spawn(executable, args, {
+    windowsHide: true,
+    stdio: "ignore",
+  });
   await new Promise((ok, reject) => {
     const timer = setTimeout(() => {
       second.kill();
