@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "date_utc": "2026-10-20",
+  "purpose": "Short desktop process attribution diagnostic; no release qualification.",
+  "build": {
+    "desktop_sha256": "0bf56ec2947125bdc0ac04cf83a0fb4f674d606923eb9639f99723f8cf33dbee",
+    "source_tree": "578e7919029a7e1cc60f213103abc9b4c1c3f80b",
+    "scope": "Pre-PR19 release candidate, same binary as the authenticated startup baseline."
+  },
+  "host": {
+    "windows_version": "10.0.26300",
+    "logical_processors": 20,
+    "reference_machine": false
+  },
+  "method": {
+    "connection_state": "Service unavailable; no Quad9 service installed.",
+    "profile": "Reused isolated WebView profile from earlier desktop-only launches.",
+    "settle_seconds": 45,
+    "measured_seconds": 45.9532455,
+    "cdp_listener_enabled": false,
+    "foreground_qualified": false,
+    "cpu": "Differences in accumulated process kernel/user time at two endpoints, normalized to one logical CPU. Matching endpoint process sets do not exclude transient children.",
+    "local_load": "No local build or browser regression suite during this clean interval. Other applications retained their normal state."
+  },
+  "cpu_percent_one_logical_core": 9.112522857607521,
+  "roles": [
+    {
+      "role": "webview-gpu-process",
+      "cpu_percent_one_logical_core": 0
+    },
+    {
+      "role": "webview-browser",
+      "cpu_percent_one_logical_core": 6.698384339360752
+    },
+    {
+      "role": "webview-utility",
+      "cpu_percent_one_logical_core": 2.380136567285547
+    },
+    {
+      "role": "native-host",
+      "cpu_percent_one_logical_core": 0.0340019509612221
+    },
+    {
+      "role": "webview-crashpad-handler",
+      "cpu_percent_one_logical_core": 0
+    },
+    {
+      "role": "webview-renderer",
+      "cpu_percent_one_logical_core": 0
+    }
+  ],
+  "follow_up_trace": {
+    "separate_instrumented_interval": true,
+    "cdp_client_connected": true,
+    "seconds": 30,
+    "categories": ["toplevel", "ipc", "base", "sequence_manager"],
+    "observed_task_sources": [
+      "net/dns/serial_worker.cc",
+      "net/dns/host_resolver_system_task.cc",
+      "chrome/browser/memory_details.cc",
+      "components/metrics/content/subprocess_metrics_provider.cc",
+      "components/telemetry_client/oneds_uploader.cc"
+    ],
+    "interpretation": "Task durations can include blocking and nested work. They are not CPU totals and do not establish the cause of the process-counter result.",
+    "protocol": "https://chromedevtools.github.io/devtools-protocol/tot/Tracing/"
+  },
+  "qualification": {
+    "complete_service_desktop_process_set": false,
+    "complete_exited_process_cpu_accounting": false,
+    "five_minute_interval": false,
+    "foreground_required_conditions_established": false,
+    "cpu_target_pass": null,
+    "memory_target_pass": null
+  },
+  "cleanup": {
+    "owned_desktop_job_closed": true,
+    "service_and_dns_unchanged": true
+  }
+}
