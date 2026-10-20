@@ -32,6 +32,7 @@
   "method": {
     "startup": "Windows native process creation until CDP observes the settled authenticated live region; includes observation overhead and excludes credential/PowerShell bootstrap startup. Twenty fresh WebView profiles with normal OS caches.",
     "p95": "Nearest rank, nineteenth of twenty ordered observations.",
+    "document_time_origin": "Performance.timeOrigin relative to native process creation; this is a document timing origin, not an OS renderer-process creation timestamp.",
     "pre_sampling": "The final twentieth-launch profile remained open during an approximately eight-minute foreground wait, followed by thirty seconds of sampler settling.",
     "resources": "Cumulative desktop job CPU, including exited descendants, plus simultaneous LocalSystem service counters. Working sets count shared resident pages in every mapping. CDP clients disconnected before settling.",
     "foreground": "Every sampled foreground PID must match the desktop; unsampled transitions are not established. Sampler holds a scoped display/system execution request when foreground sampling runs, then releases it.",
@@ -46,121 +47,121 @@
       {
         "run": 1,
         "observed_ms": 3424.165,
-        "renderer_origin_ms": 2273.3,
+        "document_time_origin_ms": 2273.3,
         "service_requests": 2
       },
       {
         "run": 2,
         "observed_ms": 5575.453,
-        "renderer_origin_ms": 3818.6,
+        "document_time_origin_ms": 3818.6,
         "service_requests": 2
       },
       {
         "run": 3,
         "observed_ms": 3315.123,
-        "renderer_origin_ms": 2401.5,
+        "document_time_origin_ms": 2401.5,
         "service_requests": 2
       },
       {
         "run": 4,
         "observed_ms": 2951.985,
-        "renderer_origin_ms": 2201.3,
+        "document_time_origin_ms": 2201.3,
         "service_requests": 2
       },
       {
         "run": 5,
         "observed_ms": 3165.342,
-        "renderer_origin_ms": 2230,
+        "document_time_origin_ms": 2230,
         "service_requests": 2
       },
       {
         "run": 6,
         "observed_ms": 3688.275,
-        "renderer_origin_ms": 2330,
+        "document_time_origin_ms": 2330,
         "service_requests": 2
       },
       {
         "run": 7,
         "observed_ms": 2822.535,
-        "renderer_origin_ms": 1745,
+        "document_time_origin_ms": 1745,
         "service_requests": 2
       },
       {
         "run": 8,
         "observed_ms": 3606.836,
-        "renderer_origin_ms": 2449.6,
+        "document_time_origin_ms": 2449.6,
         "service_requests": 2
       },
       {
         "run": 9,
         "observed_ms": 2887.169,
-        "renderer_origin_ms": 1806.1,
+        "document_time_origin_ms": 1806.1,
         "service_requests": 2
       },
       {
         "run": 10,
         "observed_ms": 2760.024,
-        "renderer_origin_ms": 1805.8,
+        "document_time_origin_ms": 1805.8,
         "service_requests": 2
       },
       {
         "run": 11,
         "observed_ms": 3846.847,
-        "renderer_origin_ms": 2379.8,
+        "document_time_origin_ms": 2379.8,
         "service_requests": 2
       },
       {
         "run": 12,
         "observed_ms": 2499.831,
-        "renderer_origin_ms": 1655.6,
+        "document_time_origin_ms": 1655.6,
         "service_requests": 2
       },
       {
         "run": 13,
         "observed_ms": 2657.731,
-        "renderer_origin_ms": 1576.1,
+        "document_time_origin_ms": 1576.1,
         "service_requests": 2
       },
       {
         "run": 14,
         "observed_ms": 2699.802,
-        "renderer_origin_ms": 1917.6,
+        "document_time_origin_ms": 1917.6,
         "service_requests": 2
       },
       {
         "run": 15,
         "observed_ms": 3049.508,
-        "renderer_origin_ms": 1898.2,
+        "document_time_origin_ms": 1898.2,
         "service_requests": 2
       },
       {
         "run": 16,
         "observed_ms": 2230.093,
-        "renderer_origin_ms": 1379.2,
+        "document_time_origin_ms": 1379.2,
         "service_requests": 2
       },
       {
         "run": 17,
         "observed_ms": 2370.931,
-        "renderer_origin_ms": 1336.6,
+        "document_time_origin_ms": 1336.6,
         "service_requests": 2
       },
       {
         "run": 18,
         "observed_ms": 2313.975,
-        "renderer_origin_ms": 1482.5,
+        "document_time_origin_ms": 1482.5,
         "service_requests": 2
       },
       {
         "run": 19,
         "observed_ms": 4056.014,
-        "renderer_origin_ms": 2640.1,
+        "document_time_origin_ms": 2640.1,
         "service_requests": 2
       },
       {
         "run": 20,
         "observed_ms": 2966.608,
-        "renderer_origin_ms": 1805.2,
+        "document_time_origin_ms": 1805.2,
         "service_requests": 2
       }
     ]

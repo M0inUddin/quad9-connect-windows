@@ -74,6 +74,7 @@
   },
   "cleanup": {
     "owned_desktop_job_closed": true,
-    "service_and_dns_unchanged": true
+    "service_install_or_removal_requested": false,
+    "dns_mutation_requested": false
   }
 }
